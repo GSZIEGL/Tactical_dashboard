@@ -101,9 +101,6 @@ STRATEGY_PALETTE = {
     "LAB": {"name": "Labdatartás mélyebben", "block": "low_mid", "style": "control"},
 }
 
-import pandas as pd
-import matplotlib.pyplot as plt
-
 st.title("Tactical Briefing Engine v1")
 
 step = st.sidebar.radio(
@@ -188,34 +185,26 @@ elif step == "2. Review":
 
 elif step == "3. Output":
     st.subheader("Coach View")
-
     st.markdown("### 9 taktikai opció – stratégiai paletta")
 
-    palette_df = pd.DataFrame([
+    palette_rows = [
         {"Code": k, "Strategy": v["name"], "Block height": v["block"], "Style": v["style"]}
         for k, v in STRATEGY_PALETTE.items()
-    ])
+    ]
+    st.table(palette_rows)
 
-    st.dataframe(palette_df, use_container_width=True)
+    st.markdown("### Stratégiai térkép (szöveges nézet)")
+    st.markdown("**Magas blokk:** MLT, DOM")
+    st.markdown("**Közép-magas blokk:** PRS, POZ")
+    st.markdown("**Közép blokk:** GAT, BAT, KIE")
+    st.markdown("**Alacsony-közép blokk:** LAB")
+    st.markdown("**Mély blokk:** KON")
 
-    # simple diagram
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
-
-    block_map = {"low":1, "low_mid":2, "mid":3, "mid_high":4, "high":5}
-    style_map = {"direct":1, "transition_press":2, "balanced":3, "balanced_control":4, "control":5, "aggressive":6}
-
-    for code, data in STRATEGY_PALETTE.items():
-        x = style_map.get(data["style"],3)
-        y = block_map.get(data["block"],3)
-        ax.scatter(x, y)
-        ax.text(x+0.03, y+0.03, code)
-
-    ax.set_xlabel("Style axis")
-    ax.set_ylabel("Block height")
-    ax.set_title("Strategic palette")
-
-    st.pyplot(fig)
+    st.markdown("**Direkt oldal:** KON, GAT")
+    st.markdown("**Átmenet/presszing oldal:** PRS")
+    st.markdown("**Kiegyensúlyozott közép:** BAT, KIE")
+    st.markdown("**Kontroll oldal:** LAB, POZ, DOM")
+    st.markdown("**Agresszív magas blokk:** MLT")
 
     result = st.session_state.result
     if result is None:
