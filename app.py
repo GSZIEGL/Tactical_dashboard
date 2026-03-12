@@ -2,7 +2,7 @@ import streamlit as st
 from dataclasses import dataclass
 from typing import Dict, Optional, List
 
-st.set_page_config(page_title="Tactical Briefing Engine", layout="wide")
+st.set_page_config(page_title="Taktikai meccs-briefing generátor", layout="wide")
 
 
 @dataclass
@@ -44,7 +44,7 @@ class BriefingResult:
     conclusion: List[str]
 
 
-# ---------- Tactical palette ----------
+# ---------- Taktikai paletta ----------
 STRATEGY_PALETTE = {
     "KON": {"name": "Kontra mély blokkból", "block": "low", "style": "direct"},
     "GAT": {"name": "Gyors átmenet", "block": "mid", "style": "direct"},
@@ -58,9 +58,8 @@ STRATEGY_PALETTE = {
 }
 
 
-# ---------- Placeholder engine layer ----------
+# ---------- Ideiglenes briefing motor ----------
 def run_briefing_engine(opponent_name: str) -> BriefingResult:
-    """MVP placeholder. Replace with real parsing + scoring engine."""
     return BriefingResult(
         plan_a="GAT",
         plan_b="BAT",
@@ -101,10 +100,10 @@ def run_briefing_engine(opponent_name: str) -> BriefingResult:
     )
 
 
-# ---------- Helpers ----------
+# ---------- Segédfüggvények ----------
 def strategy_palette_rows() -> List[dict]:
     return [
-        {"Code": k, "Strategy": v["name"], "Block height": v["block"], "Style": v["style"]}
+        {"Kód": k, "Stratégia": v["name"], "Blokkmagasság": v["block"], "Játékstílus": v["style"]}
         for k, v in STRATEGY_PALETTE.items()
     ]
 
@@ -123,7 +122,7 @@ def strategy_scatter_data(selected_a: Optional[str] = None, selected_b: Optional
         1: "Direkt",
         2: "Direkt / Presszing",
         3: "Vegyes",
-        4: "Kiegy. kontroll",
+        4: "Kiegyensúlyozott kontroll",
         5: "Kontroll",
         6: "Agresszív",
     }
@@ -148,7 +147,7 @@ def strategy_scatter_data(selected_a: Optional[str] = None, selected_b: Optional
                 "style_label": style_label[x],
                 "block_label": block_label[y],
                 "marker_size": 260 if code in [selected_a, selected_b] else 170,
-                "marker_type": "Plan A" if code == selected_a else "Plan B" if code == selected_b else "Palette",
+                "marker_type": "Plan A" if code == selected_a else "Plan B" if code == selected_b else "Paletta",
             }
         )
     return rows
@@ -191,7 +190,7 @@ def render_strategy_map(selected_a: Optional[str] = None, selected_b: Optional[s
                         "field": "marker_type",
                         "type": "nominal",
                         "scale": {
-                            "domain": ["Palette", "Plan A", "Plan B"],
+                            "domain": ["Paletta", "Plan A", "Plan B"],
                             "range": ["#FFFFFF", "#F3D34A", "#63D2C6"],
                         },
                         "legend": {"title": "Jelölés"},
@@ -245,7 +244,12 @@ def render_dimensions_bar(result: BriefingResult):
         "encoding": {
             "x": {"field": "Dimenzió", "type": "nominal", "axis": {"title": None, "labelAngle": -20}},
             "xOffset": {"field": "Csapat"},
-            "y": {"field": "Érték", "type": "quantitative", "scale": {"domain": [0, 10]}, "axis": {"title": "Score (1–10)"}},
+            "y": {
+                "field": "Érték",
+                "type": "quantitative",
+                "scale": {"domain": [0, 10]},
+                "axis": {"title": "Pontszám (1–10)"},
+            },
             "color": {
                 "field": "Csapat",
                 "type": "nominal",
@@ -275,10 +279,14 @@ def render_radar_like_chart(result: BriefingResult):
         "data": {"values": radar_rows},
         "layer": [
             {
-                "mark": {"type": "line", "point": True},
+                "mark": {"type": "line", "point": True, "interpolate": "linear-closed"},
                 "encoding": {
                     "theta": {"field": "Dimenzió", "type": "nominal"},
-                    "radius": {"field": "Érték", "type": "quantitative", "scale": {"domain": [0, 10]}},
+                    "radius": {
+                        "field": "Érték",
+                        "type": "quantitative",
+                        "scale": {"domain": [0, 10]},
+                    },
                     "color": {
                         "field": "Csapat",
                         "type": "nominal",
@@ -298,11 +306,11 @@ def render_radar_like_chart(result: BriefingResult):
 
 
 # ---------- UI ----------
-st.title("Tactical Briefing Engine v1")
+st.title("Taktikai meccs-briefing generátor v1")
 
 step = st.sidebar.radio(
     "Lépés",
-    ["1. Input", "2. Review", "3. Output", "4. Export"],
+    ["1. Input", "2. Elemzés", "3. Edzői nézet", "4. Exportálás"],
     index=0,
 )
 
@@ -321,40 +329,40 @@ if step == "1. Input":
     col1, col2 = st.columns([1, 1])
 
     with col1:
-        st.subheader("Match setup")
-        opponent_name = st.text_input("Opponent name", value=st.session_state.opponent_name)
-        st.date_input("Match date")
-        st.text_input("Competition", value="NB II")
-        st.text_area("Optional notes")
+        st.subheader("Meccs beállítások")
+        opponent_name = st.text_input("Ellenfél neve", value=st.session_state.opponent_name)
+        st.date_input("Mérkőzés dátuma")
+        st.text_input("Versenysorozat", value="NB II")
+        st.text_area("Opcionális megjegyzések")
         st.session_state.opponent_name = opponent_name
 
     with col2:
-        st.subheader("Fájlfeltöltés")
+        st.subheader("Fájlok feltöltése")
         files = UploadedFiles(
-            team_match_stats=st.file_uploader("KTE match stats (.xlsx)", type=["xlsx"], key="tm"),
-            team_player_stats=st.file_uploader("KTE player stats (.xlsx)", type=["xlsx"], key="tp"),
-            team_reference_report=st.file_uploader("KTE reference report (.pdf)", type=["pdf"], key="tr"),
-            opp_match_stats=st.file_uploader("Opponent match stats (.xlsx)", type=["xlsx"], key="om"),
-            opp_player_stats=st.file_uploader("Opponent player stats (.xlsx)", type=["xlsx"], key="op"),
-            opp_report_1=st.file_uploader("Opponent report 1 (.pdf)", type=["pdf"], key="or1"),
-            opp_report_2=st.file_uploader("Opponent report 2 (.pdf)", type=["pdf"], key="or2"),
-            opp_report_3=st.file_uploader("Opponent report 3 (.pdf, optional)", type=["pdf"], key="or3"),
+            team_match_stats=st.file_uploader("KTE meccsstatisztika (.xlsx)", type=["xlsx"], key="tm"),
+            team_player_stats=st.file_uploader("KTE játékosstatisztika (.xlsx)", type=["xlsx"], key="tp"),
+            team_reference_report=st.file_uploader("KTE referencia report (.pdf)", type=["pdf"], key="tr"),
+            opp_match_stats=st.file_uploader("Ellenfél meccsstatisztika (.xlsx)", type=["xlsx"], key="om"),
+            opp_player_stats=st.file_uploader("Ellenfél játékosstatisztika (.xlsx)", type=["xlsx"], key="op"),
+            opp_report_1=st.file_uploader("Ellenfél report 1 (.pdf)", type=["pdf"], key="or1"),
+            opp_report_2=st.file_uploader("Ellenfél report 2 (.pdf)", type=["pdf"], key="or2"),
+            opp_report_3=st.file_uploader("Ellenfél report 3 (.pdf, opcionális)", type=["pdf"], key="or3"),
             template_ppt=st.file_uploader("Template PPT (.pptx)", type=["pptx"], key="ppt"),
         )
 
     c1, c2 = st.columns(2)
     with c1:
-        if st.button("Validate inputs"):
+        if st.button("Inputok ellenőrzése"):
             if files.required_ok():
-                st.success("Minden kötelező input bent van.")
+                st.success("Minden kötelező input rendben van.")
             else:
                 st.error("Hiányzik legalább egy kötelező fájl.")
     with c2:
-        if st.button("Generate briefing"):
+        if st.button("Briefing generálása"):
             if not opponent_name.strip():
                 st.error("Adj meg ellenfélnevet.")
             elif not files.required_ok():
-                st.error("A briefing generálásához minden kötelező fájl kell.")
+                st.error("A generáláshoz minden kötelező fájl szükséges.")
             else:
                 st.session_state.result = run_briefing_engine(opponent_name)
                 st.session_state.selected_plan_a = st.session_state.result.plan_a
@@ -363,10 +371,10 @@ if step == "1. Input":
                     st.session_state.selected_split = int(st.session_state.result.split.split("/")[0])
                 except Exception:
                     st.session_state.selected_split = 60
-                st.success("A briefing draft elkészült. Menj a Review fülre.")
+                st.success("A briefing vázlat elkészült. Menj az Elemzés fülre.")
 
-elif step == "2. Review":
-    st.subheader("Review / Tactical Engine")
+elif step == "2. Elemzés":
+    st.subheader("Elemzés / Taktikai motor")
     result = st.session_state.result
     if result is None:
         st.info("Előbb generálj briefinget az Input képernyőn.")
@@ -374,9 +382,9 @@ elif step == "2. Review":
         top1, top2, top3 = st.columns([1, 1, 1])
         top1.metric("Ajánlott Plan A", st.session_state.selected_plan_a)
         top2.metric("Ajánlott Plan B", st.session_state.selected_plan_b)
-        top3.metric("Megoszlás", f"{st.session_state.selected_split}/{100 - st.session_state.selected_split}")
+        top3.metric("Arány", f"{st.session_state.selected_split}/{100 - st.session_state.selected_split}")
 
-        st.markdown("### 9 taktikai opció – 2D stratégiai térkép")
+        st.markdown("### 9 taktikai opció – stratégiai térkép")
         render_strategy_map(st.session_state.selected_plan_a, st.session_state.selected_plan_b)
 
         pick1, pick2, pick3 = st.columns([1, 1, 1])
@@ -397,7 +405,18 @@ elif step == "2. Review":
                 format_func=lambda x: f"{x} – {STRATEGY_PALETTE[x]['name']}",
             )
         with pick3:
-            st.session_state.selected_split = st.slider("Plan A súly (%)", min_value=50, max_value=70, value=st.session_state.selected_split)
+            st.session_state.selected_split = st.slider(
+                "Plan A arány a meccsmodellben (%)",
+                min_value=50,
+                max_value=70,
+                value=st.session_state.selected_split,
+            )
+
+        st.info(
+            "Az arány nem szavazást jelent. A Plan A az alap játékmodell, amely várhatóan a mérkőzés nagyobb "
+            "részében érvényesül. A Plan B az alkalmazkodó viselkedés, amely bizonyos játékszituációkban jelenik meg. "
+            "A százalék azt mutatja, hogy a meccsprofil várhatóan milyen arányban követi a két modellt."
+        )
 
         with st.expander("A 9 taktikai opció táblázata", expanded=False):
             st.table(strategy_palette_rows())
@@ -409,52 +428,65 @@ elif step == "2. Review":
             for dim, vals in result.dimensions.items():
                 rows.append({"Dimenzió": dim, **vals})
             st.dataframe(rows, use_container_width=True)
+
             st.markdown("### 7 dimenzió – oszlopdiagram")
             render_dimensions_bar(result)
-            st.markdown("### 7 dimenzió – pókháló diagram")
+
+            st.markdown("### 7 dimenzió – pókhálódiagram")
             render_radar_like_chart(result)
 
         with col2:
-            st.markdown("### Gyors briefing draft")
-            st.text_area("Opponent profile", value=result.opponent_profile, height=90)
-            st.text_area("Own state", value=result.own_state, height=90)
-            st.text_area("3 kulcs", value="\\n".join(result.three_keys), height=100)
-            st.text_area("Kockázatok", value="\\n".join(result.risks), height=100)
-            st.text_area("Konklúzió", value="\\n".join(result.conclusion), height=120)
+            st.markdown("### Gyors briefing vázlat")
+            st.text_area("Ellenfél profil", value=result.opponent_profile, height=90)
+            st.text_area("Saját állapot", value=result.own_state, height=90)
+            st.text_area("3 kulcs", value="\n".join(result.three_keys), height=100)
+            st.text_area("Kockázatok", value="\n".join(result.risks), height=100)
+            st.text_area("Konklúzió", value="\n".join(result.conclusion), height=120)
 
-elif step == "3. Output":
-    st.subheader("Coach View")
+elif step == "3. Edzői nézet":
+    st.subheader("Edzői nézet")
     result = st.session_state.result
     if result is None:
         st.info("Előbb generálj briefinget.")
     else:
-        st.markdown("### 9 taktikai opció – 2D stratégiai térkép")
+        st.markdown("### 9 taktikai opció – stratégiai térkép")
         render_strategy_map(st.session_state.selected_plan_a, st.session_state.selected_plan_b)
 
         with st.expander("A 9 taktikai opció táblázata", expanded=False):
             st.table(strategy_palette_rows())
 
-        tab1, tab2, tab3 = st.tabs(["Onepager", "Tactical overview", "Print preview"])
+        tab1, tab2, tab3 = st.tabs(["Onepager", "Taktikai overview", "Nyomtatási nézet"])
 
         with tab1:
             st.markdown(f"## KTE vs {st.session_state.opponent_name}")
+
             viz1, viz2 = st.columns([1, 1])
             with viz1:
-                st.markdown("### Pókháló diagram")
+                st.markdown("### Pókhálódiagram")
                 render_radar_like_chart(result)
             with viz2:
                 st.markdown("### 7 dimenzió – oszlopdiagram")
                 render_dimensions_bar(result)
+
+            st.markdown("### Ajánlott mérkőzésmodell")
             st.markdown(
                 f"**Plan A:** {st.session_state.selected_plan_a} – {STRATEGY_PALETTE[st.session_state.selected_plan_a]['name']} | "
                 f"**Plan B:** {st.session_state.selected_plan_b} – {STRATEGY_PALETTE[st.session_state.selected_plan_b]['name']} | "
                 f"**Arány:** {st.session_state.selected_split}/{100 - st.session_state.selected_split}"
             )
+
+            st.info(
+                "Az arány azt mutatja, hogy a mérkőzés várhatóan milyen megoszlásban követi a két modellt. "
+                "A Plan A az alapjáték, a Plan B az alkalmazkodó viselkedés."
+            )
+
             st.markdown(f"**Ellenfél profil:** {result.opponent_profile}")
             st.markdown(f"**Saját állapot:** {result.own_state}")
+
             st.markdown("**3 kulcs**")
             for item in result.three_keys:
                 st.write(f"- {item}")
+
             st.markdown("**Konklúzió**")
             for item in result.conclusion:
                 st.write(f"- {item}")
@@ -463,20 +495,21 @@ elif step == "3. Output":
             st.markdown("### Kockázatok")
             for item in result.risks:
                 st.write(f"- {item}")
+
             st.markdown("### Várható meccsdinamika")
             for item in result.match_dynamics:
                 st.write(f"- {item}")
 
         with tab3:
-            st.info("Itt lesz a nyomtatható, A4 landscape preview a következő iterációban.")
+            st.info("Itt lesz a nyomtatható, fekvő A4-es nézet a következő iterációban.")
 
-elif step == "4. Export":
-    st.subheader("Export")
+elif step == "4. Exportálás":
+    st.subheader("Exportálás")
     result = st.session_state.result
     if result is None:
         st.info("Előbb generálj briefinget.")
     else:
-        st.success("Az export motor helye kész. Következő iterációban ide kerül a PPT/PDF generálás.")
+        st.success("Az export modul helye kész. A következő iterációban ide kerül a PPT/PDF generálás.")
         st.markdown(
             f"**Jóváhagyott stratégia:** {st.session_state.selected_plan_a} / {st.session_state.selected_plan_b} "
             f"({st.session_state.selected_split}/{100 - st.session_state.selected_split})"
@@ -484,6 +517,6 @@ elif step == "4. Export":
         export_name = f"KTE_vs_{st.session_state.opponent_name.strip().replace(' ', '_') or 'Opponent'}_briefing"
         st.code(f"{export_name}.pptx")
         st.code(f"{export_name}.pdf")
-        st.button("Export PPT")
-        st.button("Export PDF")
-        st.button("Print now")
+        st.button("PPT export")
+        st.button("PDF export")
+        st.button("Nyomtatás")
