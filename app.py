@@ -419,10 +419,8 @@ elif step == "2. Review":
             st.text_area("Opponent profile", value=result.opponent_profile, height=90)
             st.text_area("Own state", value=result.own_state, height=90)
             st.text_area("3 kulcs", value="\\n".join(result.three_keys), height=100)
-            st.text_area("Kockázatok", value="
-".join(result.risks), height=100)
-            st.text_area("Konklúzió", value="
-".join(result.conclusion), height=120)
+            st.text_area("Kockázatok", value="\\n".join(result.risks), height=100)
+            st.text_area("Konklúzió", value="\\n".join(result.conclusion), height=120)
 
 elif step == "3. Output":
     st.subheader("Coach View")
