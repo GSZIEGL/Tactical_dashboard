@@ -88,6 +88,22 @@ def run_briefing_engine(opponent_name: str) -> BriefingResult:
 
 
 # ---------- UI ----------
+# ---- Strategy palette (9 tactical options) ----
+STRATEGY_PALETTE = {
+    "KON": {"name": "Kontra mély blokkból", "block": "low", "style": "direct"},
+    "GAT": {"name": "Gyors átmenet", "block": "mid", "style": "direct"},
+    "BAT": {"name": "Középső blokk + átmenet", "block": "mid", "style": "balanced"},
+    "KIE": {"name": "Kiegyensúlyozott", "block": "mid", "style": "balanced_control"},
+    "PRS": {"name": "Presszing + átmenet", "block": "mid_high", "style": "transition_press"},
+    "MLT": {"name": "Magas letámadás", "block": "high", "style": "aggressive"},
+    "DOM": {"name": "Dominancia", "block": "high", "style": "control"},
+    "POZ": {"name": "Pozíciós támadás", "block": "mid_high", "style": "control"},
+    "LAB": {"name": "Labdatartás mélyebben", "block": "low_mid", "style": "control"},
+}
+
+import pandas as pd
+import matplotlib.pyplot as plt
+
 st.title("Tactical Briefing Engine v1")
 
 step = st.sidebar.radio(
@@ -171,6 +187,41 @@ elif step == "2. Review":
             st.text_area("Konklúzió", value="\n".join(result.conclusion), height=120)
 
 elif step == "3. Output":
+    st.subheader("Coach View")
+
+    st.markdown("### 9 taktikai opció – stratégiai paletta")
+
+    palette_df = pd.DataFrame([
+        {"Code": k, "Strategy": v["name"], "Block height": v["block"], "Style": v["style"]}
+        for k, v in STRATEGY_PALETTE.items()
+    ])
+
+    st.dataframe(palette_df, use_container_width=True)
+
+    # simple diagram
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+
+    block_map = {"low":1, "low_mid":2, "mid":3, "mid_high":4, "high":5}
+    style_map = {"direct":1, "transition_press":2, "balanced":3, "balanced_control":4, "control":5, "aggressive":6}
+
+    for code, data in STRATEGY_PALETTE.items():
+        x = style_map.get(data["style"],3)
+        y = block_map.get(data["block"],3)
+        ax.scatter(x, y)
+        ax.text(x+0.03, y+0.03, code)
+
+    ax.set_xlabel("Style axis")
+    ax.set_ylabel("Block height")
+    ax.set_title("Strategic palette")
+
+    st.pyplot(fig)
+
+    result = st.session_state.result
+    if result is None:
+        st.info("Előbb generálj briefinget.")
+    else:
+        tab1, tab2, tab3 = st.tabs(["Onepager", "Tactical overview", "Print preview"])
     st.subheader("Coach View")
     result = st.session_state.result
     if result is None:
