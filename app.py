@@ -418,7 +418,7 @@ elif step == "2. Review":
             st.markdown("### Gyors briefing draft")
             st.text_area("Opponent profile", value=result.opponent_profile, height=90)
             st.text_area("Own state", value=result.own_state, height=90)
-            st.text_area("3 kulcs", value=")
+            st.text_area("3 kulcs", value="
 ".join(result.three_keys), height=100)
             st.text_area("Kockázatok", value="
 ".join(result.risks), height=100)
