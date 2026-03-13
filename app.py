@@ -67,7 +67,7 @@ def coerce_cell_value(x):
 
 # ----------------------------------------------------
 # ALIASES
-# Ezeket majd a te fájlod fejlécsorához finomítjuk, ha kell.
+# Ezeket később tovább lehet finomítani a konkrét exporthoz
 # ----------------------------------------------------
 
 METRIC_ALIASES = {
@@ -130,11 +130,6 @@ def find_total_row_index(df: pd.DataFrame) -> Optional[int]:
 
 
 def build_header_map(df: pd.DataFrame) -> Dict[int, str]:
-    """
-    Feltételezés:
-    - az első sor a fejlécsor
-    - a Main statistics sheet ilyen szerkezetű
-    """
     headers = {}
     if df.shape[0] == 0:
         return headers
@@ -145,7 +140,6 @@ def build_header_map(df: pd.DataFrame) -> Dict[int, str]:
 
 
 def find_column_by_aliases(header_map: Dict[int, str], aliases: List[str]) -> Optional[int]:
-    # először pontos egyezés / tartalmazás
     for c, h in header_map.items():
         if is_empty(h):
             continue
@@ -193,7 +187,6 @@ def parse_excel_metrics(file_bytes: bytes) -> Dict[str, float]:
 
         sheet_name = normalize_text(sheet)
 
-        # első körben a Main statistics-re fókuszálunk
         if "main statistics" in sheet_name:
             sheet_metrics = parse_main_statistics_sheet(df)
             metrics.update(sheet_metrics)
