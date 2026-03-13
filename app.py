@@ -77,6 +77,17 @@ def normalize_score(v, a, b):
     return clamp(1 + 9 * ((v - a) / (b - a)))
 
 
+def unique_keep_order(items: List[str]) -> List[str]:
+    out = []
+    seen = set()
+    for x in items:
+        key = x.strip()
+        if key and key not in seen:
+            out.append(key)
+            seen.add(key)
+    return out
+
+
 # =========================================================
 # STRATEGY PALETTE
 # =========================================================
@@ -131,21 +142,8 @@ def strategy_scatter_data(selected_a: Optional[str] = None, selected_b: Optional
         "control": 5,
         "aggressive": 6,
     }
-    style_label = {
-        1: "Direkt",
-        2: "D/P",
-        3: "Vegyes",
-        4: "Kiegy.",
-        5: "Kontroll",
-        6: "Agresszív",
-    }
-    block_label = {
-        1: "Mély",
-        2: "Low-mid",
-        3: "Közép",
-        4: "Mid-high",
-        5: "Magas",
-    }
+    style_label = {1: "Direkt", 2: "D/P", 3: "Vegyes", 4: "Kiegy.", 5: "Kontroll", 6: "Agresszív"}
+    block_label = {1: "Mély", 2: "Low-mid", 3: "Közép", 4: "Mid-high", 5: "Magas"}
 
     rows = []
     for code, data in STRATEGY_PALETTE.items():
@@ -199,10 +197,7 @@ def render_strategy_map(selected_a: Optional[str] = None, selected_b: Optional[s
                     "color": {
                         "field": "marker_type",
                         "type": "nominal",
-                        "scale": {
-                            "domain": ["Paletta", "Plan A", "Plan B"],
-                            "range": ["#5B2C83", "#E0A500", "#2AA7A1"],
-                        },
+                        "scale": {"domain": ["Paletta", "Plan A", "Plan B"], "range": ["#5B2C83", "#E0A500", "#2AA7A1"]},
                         "legend": {"title": "Jelölés"},
                     },
                     "tooltip": [
@@ -477,27 +472,39 @@ def parse_player_excel(file_bytes: bytes) -> Dict[str, pd.DataFrame]:
 
 
 # =========================================================
-# PDF PARSER
+# PDF PARSER - FINOMHANGOLT
 # =========================================================
 
+TARGET_PAGES = [1, 2, 3, 4, 6]  # 0-indexelve: 2,3,4,5,7 oldal
+
+
 @st.cache_data(show_spinner=False)
-def extract_pdf_text(file_bytes: bytes, max_pages: int = 15) -> str:
-    text_chunks = []
+def extract_pdf_pages(file_bytes: bytes, target_pages: Tuple[int, ...] = tuple(TARGET_PAGES), max_pages: int = 40) -> List[dict]:
+    out = []
     try:
         with pdfplumber.open(file_bytes) as pdf:
-            for page in pdf.pages[:max_pages]:
-                text_chunks.append(page.extract_text() or "")
+            total_pages = min(len(pdf.pages), max_pages)
+            for p in range(total_pages):
+                if p not in target_pages:
+                    continue
+                txt = pdf.pages[p].extract_text() or ""
+                if txt.strip():
+                    out.append({"page_index": p, "page_number": p + 1, "text": txt})
     except Exception:
-        return ""
-    return "\n".join(text_chunks)
+        return []
+    return out
 
 
-def combine_pdf_texts(files: List[object]) -> str:
+def combine_targeted_pdf_texts(files: List[object]) -> Tuple[str, List[dict]]:
+    page_blocks = []
     texts = []
     for f in files:
-        if f is not None:
-            texts.append(extract_pdf_text(f.getvalue()))
-    return "\n\n".join([t for t in texts if t.strip()])
+        if f is None:
+            continue
+        pages = extract_pdf_pages(f.getvalue())
+        page_blocks.extend(pages)
+        texts.extend([x["text"] for x in pages if x["text"].strip()])
+    return "\n\n".join(texts), page_blocks
 
 
 def extract_lines_with_keywords(text: str, keywords: List[str], limit: int = 6) -> List[str]:
@@ -509,7 +516,7 @@ def extract_lines_with_keywords(text: str, keywords: List[str], limit: int = 6) 
             out.append(line)
         if len(out) >= limit:
             break
-    return out
+    return unique_keep_order(out)
 
 
 def infer_formation(text: str) -> Optional[str]:
@@ -519,34 +526,58 @@ def infer_formation(text: str) -> Optional[str]:
     return None
 
 
-def build_pdf_insights(text: str) -> Dict[str, List[str] | str]:
-    text_norm = normalize_text(text)
+def extract_player_names_from_pdf(text: str, limit: int = 6) -> List[str]:
+    # Nagyon egyszerű név-heurisztika: két nagybetűs szó egymás után
+    names = re.findall(r"\b[A-ZÁÉÍÓÖŐÚÜŰ][a-záéíóöőúüű\-]+(?:\s+[A-ZÁÉÍÓÖŐÚÜŰ][a-záéíóöőúüű\-]+)+\b", text)
+    return unique_keep_order(names)[:limit]
 
+
+def build_pdf_insights(text: str) -> Dict[str, object]:
     formation = infer_formation(text)
 
     dna_lines = extract_lines_with_keywords(
         text,
-        ["press", "pressing", "build-up", "build up", "transition", "counter", "direct", "possession"],
-        limit=6,
+        ["press", "pressing", "build-up", "build up", "transition", "counter", "direct", "possession", "ppda"],
+        limit=8,
     )
 
     risk_lines = extract_lines_with_keywords(
         text,
-        ["weakness", "risk", "vulnerable", "exposed", "set piece", "cross", "transition", "counter"],
-        limit=6,
+        ["weakness", "risk", "vulnerable", "exposed", "set piece", "cross", "transition", "counter", "lost balls"],
+        limit=8,
     )
 
     set_piece_lines = extract_lines_with_keywords(
         text,
         ["corner", "free kick", "set piece", "header", "aerial"],
-        limit=5,
+        limit=6,
     )
 
     dynamics_lines = extract_lines_with_keywords(
         text,
-        ["first half", "second half", "tempo", "start", "late phase", "after losing", "after winning"],
-        limit=5,
+        ["first half", "second half", "tempo", "start", "late phase", "after losing", "after winning", "momentum"],
+        limit=6,
     )
+
+    pressing_lines = extract_lines_with_keywords(
+        text,
+        ["pressing", "high pressing", "low pressing", "ppda", "challenge intensity"],
+        limit=6,
+    )
+
+    build_up_lines = extract_lines_with_keywords(
+        text,
+        ["build-up", "build up", "passes accurate", "progressive", "passes into penalty area", "final third"],
+        limit=6,
+    )
+
+    player_threat_lines = extract_lines_with_keywords(
+        text,
+        ["key passes", "progressive passes", "shots", "xg", "penalty area", "entries", "through pass"],
+        limit=8,
+    )
+
+    detected_names = extract_player_names_from_pdf(text, limit=8)
 
     return {
         "formation": formation or "n.a.",
@@ -554,6 +585,10 @@ def build_pdf_insights(text: str) -> Dict[str, List[str] | str]:
         "risk_lines": risk_lines,
         "set_piece_lines": set_piece_lines,
         "dynamics_lines": dynamics_lines,
+        "pressing_lines": pressing_lines,
+        "build_up_lines": build_up_lines,
+        "player_threat_lines": player_threat_lines,
+        "detected_names": detected_names,
     }
 
 
@@ -597,6 +632,89 @@ def distinct_metric_count(team_metrics: Dict[str, float], opp_metrics: Dict[str,
     return sum(1 for k in keys if team_metrics.get(k, 0) != opp_metrics.get(k, 0))
 
 
+def build_warning_list(opp_players, opp_pdf_insights) -> List[str]:
+    warnings = []
+
+    if opp_players is not None and not opp_players["creators"].empty:
+        row = opp_players["creators"].iloc[0]
+        warnings.append(f"{row['player']} – fő kreatív játékos, félterület-védekezés prioritás.")
+    if opp_players is not None and not opp_players["progressors"].empty:
+        row = opp_players["progressors"].iloc[0]
+        warnings.append(f"{row['player']} – fő progresszor, pressing trigger jelölt.")
+    if opp_players is not None and not opp_players["duel_players"].empty:
+        row = opp_players["duel_players"].iloc[0]
+        warnings.append(f"{row['player']} – párharcerős profil, második labdákra figyelni.")
+
+    if opp_pdf_insights:
+        warnings.extend(opp_pdf_insights["risk_lines"][:2])
+
+    if not warnings:
+        warnings = [
+            "A fő progressziós csatornákat korán zárni.",
+            "A második labdák kontrollja kulcskérdés.",
+        ]
+
+    return unique_keep_order(warnings)
+
+
+def build_three_keys(dims, opp_pdf_insights, warnings) -> List[str]:
+    keys = []
+
+    if dims["Átmenetek"]["KTE"] >= dims["Átmenetek"]["ELL"]:
+        keys.append("Átmeneti helyzetek sebességi kihasználása.")
+    else:
+        keys.append("Átmeneti védekezés kontrollja és rest defense stabilizálása.")
+
+    if dims["Labdakihozatal"]["KTE"] >= dims["Letámadás"]["ELL"]:
+        keys.append("Labdakihozatal türelemmel, belső progressziós csatornák használatával.")
+    else:
+        keys.append("Korai nyomás ellen egyszerűsített labdakihozatal és második labdák készítése.")
+
+    if opp_pdf_insights and opp_pdf_insights["set_piece_lines"]:
+        keys.append("Pontrúgás-védekezés: első kontakt és lecsorgók kontrollja.")
+    else:
+        keys.append("Boxon belüli jelenlét és második hullám érkezések javítása.")
+
+    return unique_keep_order(keys)[:3]
+
+
+def build_match_dynamics(opp_pdf_insights, dims) -> List[str]:
+    dynamics = []
+
+    if opp_pdf_insights and opp_pdf_insights["dynamics_lines"]:
+        dynamics.extend(opp_pdf_insights["dynamics_lines"][:3])
+
+    if not dynamics:
+        dynamics = [
+            "Erős kezdő fázis várható, középső zónás párharcokkal.",
+            "A középső szakaszban a labdakihozatal minősége döntő lehet.",
+            "A végjátékban nőhet az átmeneti helyzetek száma.",
+        ]
+
+    if dims["Pontrúgások"]["ELL"] > dims["Pontrúgások"]["KTE"]:
+        dynamics.append("A késői szakaszban nőhet az ellenfél pontrúgás-veszélye.")
+
+    return unique_keep_order(dynamics)[:4]
+
+
+def build_opponent_dna_text(opp_pdf_insights, opp_metrics, opp_matches) -> str:
+    possession = (opp_metrics.get("possession_pct", 0) * 100) if opp_metrics.get("possession_pct", 0) <= 1 else opp_metrics.get("possession_pct", 0)
+    shots_pm = round(opp_metrics.get("shots", 0) / max(opp_matches or 1, 1), 2)
+    entries_pm = round(opp_metrics.get("entries_box", 0) / max(opp_matches or 1, 1), 2)
+    formation = opp_pdf_insights["formation"] if opp_pdf_insights else "n.a."
+
+    bullet_lines = opp_pdf_insights["dna_lines"][:3] if opp_pdf_insights else []
+    bullet_text = "\n".join([f"- {x}" for x in bullet_lines])
+
+    return (
+        f"Formáció: {formation}\n"
+        f"Labdabirtoklás: {round(possession, 1)}%\n"
+        f"Lövések / meccs: {shots_pm}\n"
+        f"Box entries / meccs: {entries_pm}\n\n"
+        f"{bullet_text}"
+    ).strip()
+
+
 def run_engine(
     team_match_file,
     opp_match_file,
@@ -633,31 +751,16 @@ def run_engine(
     team_players = parse_player_excel(team_player_file.getvalue()) if team_player_file else None
     opp_players = parse_player_excel(opp_player_file.getvalue()) if opp_player_file else None
 
-    team_pdf_text = combine_pdf_texts(team_pdf_files or [])
-    opp_pdf_text = combine_pdf_texts(opp_pdf_files or [])
+    team_pdf_text, team_pdf_pages = combine_targeted_pdf_texts(team_pdf_files or [])
+    opp_pdf_text, opp_pdf_pages = combine_targeted_pdf_texts(opp_pdf_files or [])
 
     team_pdf_insights = build_pdf_insights(team_pdf_text) if team_pdf_text.strip() else None
     opp_pdf_insights = build_pdf_insights(opp_pdf_text) if opp_pdf_text.strip() else None
 
-    warnings = []
-    if opp_players is not None and not opp_players["creators"].empty:
-        row = opp_players["creators"].iloc[0]
-        warnings.append(f"{row['player']} – fő kreatív játékos, félterület-védekezés prioritás.")
-    if opp_players is not None and not opp_players["progressors"].empty:
-        row = opp_players["progressors"].iloc[0]
-        warnings.append(f"{row['player']} – fő progresszor, pressing trigger jelölt.")
-    if opp_players is not None and not opp_players["duel_players"].empty:
-        row = opp_players["duel_players"].iloc[0]
-        warnings.append(f"{row['player']} – párharcerős profil, második labdákra figyelni.")
-
-    if opp_pdf_insights and opp_pdf_insights["risk_lines"]:
-        warnings.extend(opp_pdf_insights["risk_lines"][:2])
-
-    if not warnings:
-        warnings = [
-            "A fő progressziós csatornákat korán zárni.",
-            "A második labdák kontrollja kulcskérdés.",
-        ]
+    warnings = build_warning_list(opp_players, opp_pdf_insights)
+    three_keys = build_three_keys(dims, opp_pdf_insights, warnings)
+    match_dynamics = build_match_dynamics(opp_pdf_insights, dims)
+    opponent_dna_text = build_opponent_dna_text(opp_pdf_insights, opp_metrics, opp_matches)
 
     return (
         dims,
@@ -675,10 +778,15 @@ def run_engine(
         team_players,
         opp_players,
         warnings,
+        three_keys,
+        match_dynamics,
         team_pdf_text,
         opp_pdf_text,
         team_pdf_insights,
         opp_pdf_insights,
+        team_pdf_pages,
+        opp_pdf_pages,
+        opponent_dna_text,
     )
 
 
@@ -710,9 +818,9 @@ def render_radar_svg(dims: Dict[str, Dict[str, float]]):
     kte_vals = [dims[x]["KTE"] for x in labels]
     ell_vals = [dims[x]["ELL"] for x in labels]
 
-    size = 760
-    cx, cy = 300, 300
-    max_r = 185
+    size = 860
+    cx, cy = 315, 315
+    max_r = 190
     n = len(labels)
 
     def polygon_points(values: List[float]):
@@ -746,17 +854,17 @@ def render_radar_svg(dims: Dict[str, Dict[str, float]]):
         y2 = cy + math.sin(ang) * max_r
         axes.append(f'<line x1="{cx}" y1="{cy}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="#D8D2E3" stroke-width="1" />')
 
-        lx = cx + math.cos(ang) * (max_r + 55)
-        ly = cy + math.sin(ang) * (max_r + 55)
+        lx = cx + math.cos(ang) * (max_r + 70)
+        ly = cy + math.sin(ang) * (max_r + 70)
 
         anchor = "middle"
-        if lx < cx - 25:
+        if lx < cx - 30:
             anchor = "end"
-        elif lx > cx + 25:
+        elif lx > cx + 30:
             anchor = "start"
 
         label_svg.append(
-            f'<text x="{lx:.1f}" y="{ly:.1f}" font-size="16" text-anchor="{anchor}" fill="#2F1D4A" font-weight="600">{label}</text>'
+            f'<text x="{lx:.1f}" y="{ly:.1f}" font-size="17" text-anchor="{anchor}" fill="#2F1D4A" font-weight="600">{label}</text>'
         )
 
     kte_poly, kte_pts = polygon_points(kte_vals)
@@ -781,13 +889,13 @@ def render_radar_svg(dims: Dict[str, Dict[str, float]]):
       {ell_circles}
       {kte_circles}
       {''.join(label_svg)}
-      <circle cx="560" cy="690" r="8" fill="#5B2C83" />
-      <text x="578" y="696" font-size="16" fill="#2F1D4A">KTE</text>
-      <circle cx="640" cy="690" r="8" fill="#B7A3C9" stroke="#5B2C83" stroke-width="1" />
-      <text x="658" y="696" font-size="16" fill="#2F1D4A">ELL</text>
+      <circle cx="620" cy="790" r="8" fill="#5B2C83" />
+      <text x="638" y="796" font-size="16" fill="#2F1D4A">KTE</text>
+      <circle cx="700" cy="790" r="8" fill="#B7A3C9" stroke="#5B2C83" stroke-width="1" />
+      <text x="718" y="796" font-size="16" fill="#2F1D4A">ELL</text>
     </svg>
     """
-    components.html(svg, height=760)
+    components.html(svg, height=860)
 
 
 # =========================================================
@@ -810,10 +918,15 @@ defaults = {
     "team_players": None,
     "opp_players": None,
     "warnings": None,
+    "three_keys": None,
+    "match_dynamics": None,
     "team_pdf_text": "",
     "opp_pdf_text": "",
     "team_pdf_insights": None,
     "opp_pdf_insights": None,
+    "team_pdf_pages": None,
+    "opp_pdf_pages": None,
+    "opponent_dna_text": "",
 }
 
 for k, v in defaults.items():
@@ -876,10 +989,15 @@ if step == "1. Input":
             team_players,
             opp_players,
             warnings,
+            three_keys,
+            match_dynamics,
             team_pdf_text,
             opp_pdf_text,
             team_pdf_insights,
             opp_pdf_insights,
+            team_pdf_pages,
+            opp_pdf_pages,
+            opponent_dna_text,
         ) = run_engine(
             kte_match,
             opp_match,
@@ -904,10 +1022,15 @@ if step == "1. Input":
         st.session_state["team_players"] = team_players
         st.session_state["opp_players"] = opp_players
         st.session_state["warnings"] = warnings
+        st.session_state["three_keys"] = three_keys
+        st.session_state["match_dynamics"] = match_dynamics
         st.session_state["team_pdf_text"] = team_pdf_text
         st.session_state["opp_pdf_text"] = opp_pdf_text
         st.session_state["team_pdf_insights"] = team_pdf_insights
         st.session_state["opp_pdf_insights"] = opp_pdf_insights
+        st.session_state["team_pdf_pages"] = team_pdf_pages
+        st.session_state["opp_pdf_pages"] = opp_pdf_pages
+        st.session_state["opponent_dna_text"] = opponent_dna_text
 
         st.success("Adatok feldolgozva.")
 
@@ -940,7 +1063,10 @@ if step == "2. Review":
     opp_matches = st.session_state.get("opp_matches")
     opp_players = st.session_state.get("opp_players")
     warnings = st.session_state.get("warnings")
+    three_keys = st.session_state.get("three_keys")
+    match_dynamics = st.session_state.get("match_dynamics")
     opp_pdf_insights = st.session_state.get("opp_pdf_insights")
+    opponent_dna_text = st.session_state.get("opponent_dna_text")
 
     if not dims:
         st.warning("Előbb tölts fel adatot az Input fülön.")
@@ -993,7 +1119,7 @@ if step == "2. Review":
         st.subheader("Dimenzió tábla")
         st.dataframe(pd.DataFrame(dims).T, use_container_width=True)
 
-        c1, c2 = st.columns(2)
+        c1, c2 = st.columns([1.15, 1])
         with c1:
             st.subheader("Pókháló")
             render_radar_svg(dims)
@@ -1019,50 +1145,42 @@ if step == "2. Review":
         else:
             st.info("Nincs opponent player Excel feltöltve.")
 
-        st.subheader("Opponent DNA")
+        r1, r2 = st.columns(2)
+        with r1:
+            st.subheader("Opponent DNA")
+            st.text_area("DNA", value=opponent_dna_text, height=220)
+
+        with r2:
+            st.subheader("Kockázatok")
+            risk_text = "\n".join([f"- {x}" for x in warnings]) if warnings else ""
+            st.text_area("Kockázatok", value=risk_text, height=220)
+
+        r3, r4 = st.columns(2)
+        with r3:
+            st.subheader("3 kulcs")
+            keys_text = "\n".join([f"- {x}" for x in (three_keys or [])])
+            st.text_area("3 kulcs", value=keys_text, height=180)
+
+        with r4:
+            st.subheader("Várható meccsdinamika")
+            dyn_text = "\n".join([f"- {x}" for x in (match_dynamics or [])])
+            st.text_area("Meccsdinamika", value=dyn_text, height=180)
+
         if opp_pdf_insights:
-            d1, d2 = st.columns(2)
-            with d1:
-                st.write("Formáció:", opp_pdf_insights["formation"])
-                st.write("DNA sorok:")
-                for line in opp_pdf_insights["dna_lines"][:5]:
-                    st.write(f"- {line}")
-            with d2:
-                st.write("Set piece / dynamics:")
-                for line in (opp_pdf_insights["set_piece_lines"][:3] + opp_pdf_insights["dynamics_lines"][:2]):
-                    st.write(f"- {line}")
-        else:
-            st.info("Nincs opponent PDF insight.")
-
-        st.subheader("Tactical warnings")
-        if warnings:
-            for w in warnings:
-                st.write(f"- {w}")
-
-        st.subheader("Skálázási háttér")
-        scaling_rows = [
-            {
-                "mutató": "entries_box / meccs",
-                "KTE": round(team_metrics.get("entries_box", 0) / max(team_matches or 1, 1), 2),
-                "ELL": round(opp_metrics.get("entries_box", 0) / max(opp_matches or 1, 1), 2),
-            },
-            {
-                "mutató": "shots / meccs",
-                "KTE": round(team_metrics.get("shots", 0) / max(team_matches or 1, 1), 2),
-                "ELL": round(opp_metrics.get("shots", 0) / max(opp_matches or 1, 1), 2),
-            },
-            {
-                "mutató": "key_passes / meccs",
-                "KTE": round(team_metrics.get("key_passes", 0) / max(team_matches or 1, 1), 2),
-                "ELL": round(opp_metrics.get("key_passes", 0) / max(opp_matches or 1, 1), 2),
-            },
-            {
-                "mutató": "corners / meccs",
-                "KTE": round(team_metrics.get("corners", 0) / max(team_matches or 1, 1), 2),
-                "ELL": round(opp_metrics.get("corners", 0) / max(opp_matches or 1, 1), 2),
-            },
-        ]
-        st.dataframe(pd.DataFrame(scaling_rows), use_container_width=True)
+            st.subheader("PDF-ből kinyert tactical notes")
+            note1, note2, note3 = st.columns(3)
+            with note1:
+                st.write("Pressing")
+                for x in opp_pdf_insights["pressing_lines"][:5]:
+                    st.write(f"- {x}")
+            with note2:
+                st.write("Build-up / Final third")
+                for x in opp_pdf_insights["build_up_lines"][:5]:
+                    st.write(f"- {x}")
+            with note3:
+                st.write("Set piece / Player threats")
+                for x in (opp_pdf_insights["set_piece_lines"][:3] + opp_pdf_insights["player_threat_lines"][:3]):
+                    st.write(f"- {x}")
 
         st.subheader("Gyors briefing draft")
         briefing_left, briefing_right = st.columns(2)
@@ -1090,25 +1208,20 @@ if step == "2. Review":
             )
 
         with briefing_right:
-            warning_text = "\n".join([f"- {w}" for w in warnings]) if warnings else ""
-            dna_text = ""
-            if opp_pdf_insights and opp_pdf_insights["dna_lines"]:
-                dna_text = "\n".join([f"- {x}" for x in opp_pdf_insights["dna_lines"][:3]])
-
+            keys_block = "\n".join([f"- {x}" for x in (three_keys or [])])
             st.text_area(
-                "3 kulcs / Warnings",
-                value=warning_text,
+                "3 kulcs",
+                value=keys_block,
                 height=120,
             )
             st.text_area(
-                "Opponent DNA / Konklúzió",
+                "Konklúzió",
                 value=(
-                    f"{dna_text}\n\n"
                     f"Ajánlott fő stratégia: {st.session_state['selected_plan_a']} – {STRATEGY_PALETTE[st.session_state['selected_plan_a']]['name']}\n"
                     f"Alternatíva: {st.session_state['selected_plan_b']} – {STRATEGY_PALETTE[st.session_state['selected_plan_b']]['name']}\n"
                     f"Javasolt megoszlás: {st.session_state['selected_split']}/{100 - st.session_state['selected_split']}"
                 ),
-                height=140,
+                height=120,
             )
 
 
@@ -1127,22 +1240,18 @@ if step == "3. Debug":
     opp_pdf = st.file_uploader("Opponent PDF", type=["pdf"], key="opp_debug_pdf")
 
     if kte_match:
-        team_metrics, team_debug_rows, team_sheet_debug, team_matches = parse_excel_metrics_with_debug(kte_match.getvalue())
-
+        team_metrics, team_debug_rows, _, team_matches = parse_excel_metrics_with_debug(kte_match.getvalue())
         st.subheader("KTE match parser találatok")
         st.json(team_metrics)
         st.write("KTE meccsszám:", team_matches)
-
         st.subheader("KTE metrika → oszlop illesztés")
         st.dataframe(pd.DataFrame(team_debug_rows), use_container_width=True)
 
     if opp_match:
-        opp_metrics, opp_debug_rows, opp_sheet_debug, opp_matches = parse_excel_metrics_with_debug(opp_match.getvalue())
-
+        opp_metrics, opp_debug_rows, _, opp_matches = parse_excel_metrics_with_debug(opp_match.getvalue())
         st.subheader("Opponent match parser találatok")
         st.json(opp_metrics)
         st.write("ELL meccsszám:", opp_matches)
-
         st.subheader("Opponent metrika → oszlop illesztés")
         st.dataframe(pd.DataFrame(opp_debug_rows), use_container_width=True)
 
@@ -1188,13 +1297,15 @@ if step == "3. Debug":
             st.dataframe(df, use_container_width=True)
 
     if kte_pdf:
-        st.subheader("KTE PDF text preview")
-        text = extract_pdf_text(kte_pdf.getvalue())
-        st.text_area("KTE PDF extracted text", value=text[:4000], height=250)
+        st.subheader("KTE PDF targeted pages")
+        text, pages = combine_targeted_pdf_texts([kte_pdf])
+        st.write("Felhasznált oldalak:", [x["page_number"] for x in pages])
+        st.text_area("KTE PDF extracted text", value=text[:6000], height=260)
         st.write(build_pdf_insights(text))
 
     if opp_pdf:
-        st.subheader("Opponent PDF text preview")
-        text = extract_pdf_text(opp_pdf.getvalue())
-        st.text_area("Opponent PDF extracted text", value=text[:4000], height=250)
+        st.subheader("Opponent PDF targeted pages")
+        text, pages = combine_targeted_pdf_texts([opp_pdf])
+        st.write("Felhasznált oldalak:", [x["page_number"] for x in pages])
+        st.text_area("Opponent PDF extracted text", value=text[:6000], height=260)
         st.write(build_pdf_insights(text))
