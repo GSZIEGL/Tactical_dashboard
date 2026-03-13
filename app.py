@@ -531,7 +531,14 @@ def run_briefing_engine(opponent_name: str, files: UploadedFiles) -> BriefingRes
 
 def strategy_palette_rows() -> List[dict]:
     label_block = {"low": "mély", "low_mid": "alacsony-közép", "mid": "közép", "mid_high": "közép-magas", "high": "magas"}
-    label_style = {"direct": "direkt", "transition_press": "presszing+átmenet", "balanced": "vegyes", "balanced_control": "kiegyensúlyozott", "control": "kontroll", "aggressive": "agresszív"}
+    label_style = {
+        "direct": "direkt",
+        "transition_press": "presszing+átmenet",
+        "balanced": "vegyes",
+        "balanced_control": "kiegyensúlyozott",
+        "control": "kontroll",
+        "aggressive": "agresszív",
+    }
     return [
         {"Kód": k, "Stratégia": v["name"], "Blokkmagasság": label_block[v["block"]], "Játékstílus": label_style[v["style"]]}
         for k, v in STRATEGY_PALETTE.items()
@@ -546,15 +553,17 @@ def strategy_scatter_data(selected_a: Optional[str] = None, selected_b: Optional
 
     rows = []
     for code, data in STRATEGY_PALETTE.items():
-        rows.append({
-            "x": style_map.get(data["style"], 3),
-            "y": block_map.get(data["block"], 3),
-            "code": code,
-            "strategy": data["name"],
-            "style_label": style_label[style_map.get(data["style"], 3)],
-            "block_label": block_label[block_map.get(data["block"], 3)],
-            "marker_type": "Plan A" if code == selected_a else "Plan B" if code == selected_b else "Paletta",
-        })
+        rows.append(
+            {
+                "x": style_map.get(data["style"], 3),
+                "y": block_map.get(data["block"], 3),
+                "code": code,
+                "strategy": data["name"],
+                "style_label": style_label[style_map.get(data["style"], 3)],
+                "block_label": block_label[block_map.get(data["block"], 3)],
+                "marker_type": "Plan A" if code == selected_a else "Plan B" if code == selected_b else "Paletta",
+            }
+        )
     return rows
 
 
@@ -568,11 +577,41 @@ def render_strategy_map(selected_a: Optional[str] = None, selected_b: Optional[s
             {
                 "mark": {"type": "text", "fontSize": 20, "fontWeight": "bold"},
                 "encoding": {
-                    "x": {"field": "x", "type": "quantitative", "scale": {"domain": [0.5, 6.5]}, "axis": {"title": "Játékstílus: Direkt → Kontroll", "values": [1, 2, 3, 4, 5, 6], "labelExpr": "datum.value == 1 ? 'Direkt' : datum.value == 2 ? 'D/P' : datum.value == 3 ? 'Vegyes' : datum.value == 4 ? 'Kiegy.' : datum.value == 5 ? 'Kontroll' : 'Agresszív'", "grid": True}},
-                    "y": {"field": "y", "type": "quantitative", "scale": {"domain": [0.5, 5.5]}, "axis": {"title": "Blokkmagasság: Mély → Magas", "values": [1, 2, 3, 4, 5], "labelExpr": "datum.value == 1 ? 'Mély' : datum.value == 2 ? 'Low-mid' : datum.value == 3 ? 'Közép' : datum.value == 4 ? 'Mid-high' : 'Magas'", "grid": True}},
+                    "x": {
+                        "field": "x",
+                        "type": "quantitative",
+                        "scale": {"domain": [0.5, 6.5]},
+                        "axis": {
+                            "title": "Játékstílus: Direkt → Kontroll",
+                            "values": [1, 2, 3, 4, 5, 6],
+                            "labelExpr": "datum.value == 1 ? 'Direkt' : datum.value == 2 ? 'D/P' : datum.value == 3 ? 'Vegyes' : datum.value == 4 ? 'Kiegy.' : datum.value == 5 ? 'Kontroll' : 'Agresszív'",
+                            "grid": True,
+                        },
+                    },
+                    "y": {
+                        "field": "y",
+                        "type": "quantitative",
+                        "scale": {"domain": [0.5, 5.5]},
+                        "axis": {
+                            "title": "Blokkmagasság: Mély → Magas",
+                            "values": [1, 2, 3, 4, 5],
+                            "labelExpr": "datum.value == 1 ? 'Mély' : datum.value == 2 ? 'Low-mid' : datum.value == 3 ? 'Közép' : datum.value == 4 ? 'Mid-high' : 'Magas'",
+                            "grid": True,
+                        },
+                    },
                     "text": {"field": "code"},
-                    "color": {"field": "marker_type", "type": "nominal", "scale": {"domain": ["Paletta", "Plan A", "Plan B"], "range": ["#5B2C83", "#E0A500", "#2AA7A1"]}, "legend": {"title": "Jelölés"}},
-                    "tooltip": [{"field": "code", "title": "Kód"}, {"field": "strategy", "title": "Stratégia"}, {"field": "block_label", "title": "Blokk"}, {"field": "style_label", "title": "Stílus"}],
+                    "color": {
+                        "field": "marker_type",
+                        "type": "nominal",
+                        "scale": {"domain": ["Paletta", "Plan A", "Plan B"], "range": ["#5B2C83", "#E0A500", "#2AA7A1"]},
+                        "legend": {"title": "Jelölés"},
+                    },
+                    "tooltip": [
+                        {"field": "code", "title": "Kód"},
+                        {"field": "strategy", "title": "Stratégia"},
+                        {"field": "block_label", "title": "Blokk"},
+                        {"field": "style_label", "title": "Stílus"},
+                    ],
                 },
             }
         ],
@@ -582,7 +621,10 @@ def render_strategy_map(selected_a: Optional[str] = None, selected_b: Optional[s
 
 
 def dimension_rows(result: BriefingResult) -> List[dict]:
-    return [{"Dimenzió": dim, "KTE": float(vals["KTE"]), "ELL": float(vals["ELL"]), "Edge": float(vals["Edge"])} for dim, vals in result.dimensions.items()]
+    return [
+        {"Dimenzió": dim, "KTE": float(vals["KTE"]), "ELL": float(vals["ELL"]), "Edge": float(vals["Edge"])}
+        for dim, vals in result.dimensions.items()
+    ]
 
 
 def render_dimensions_bar(result: BriefingResult):
@@ -591,6 +633,7 @@ def render_dimensions_bar(result: BriefingResult):
     for row in rows:
         long_rows.append({"Dimenzió": row["Dimenzió"], "Csapat": "KTE", "Érték": row["KTE"]})
         long_rows.append({"Dimenzió": row["Dimenzió"], "Csapat": "ELL", "Érték": row["ELL"]})
+
     spec = {
         "width": "container",
         "height": 320,
@@ -600,8 +643,17 @@ def render_dimensions_bar(result: BriefingResult):
             "x": {"field": "Dimenzió", "type": "nominal", "axis": {"title": None, "labelAngle": -20}},
             "xOffset": {"field": "Csapat"},
             "y": {"field": "Érték", "type": "quantitative", "scale": {"domain": [0, 10]}, "axis": {"title": "Pontszám (1–10)"}},
-            "color": {"field": "Csapat", "type": "nominal", "scale": {"domain": ["KTE", "ELL"], "range": ["#5B2C83", "#B7A3C9"]}, "legend": {"title": "Csapat"}},
-            "tooltip": [{"field": "Dimenzió"}, {"field": "Csapat"}, {"field": "Érték", "format": ".1f"}],
+            "color": {
+                "field": "Csapat",
+                "type": "nominal",
+                "scale": {"domain": ["KTE", "ELL"], "range": ["#5B2C83", "#B7A3C9"]},
+                "legend": {"title": "Csapat"},
+            },
+            "tooltip": [
+                {"field": "Dimenzió"},
+                {"field": "Csapat"},
+                {"field": "Érték", "format": ".1f"},
+            ],
         },
     }
     st.vega_lite_chart(long_rows, spec, use_container_width=True)
@@ -649,6 +701,7 @@ def render_radar_like_chart(result: BriefingResult):
         x2 = cx + math.cos(ang) * max_r
         y2 = cy + math.sin(ang) * max_r
         axes.append(f'<line x1="{cx}" y1="{cy}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="#D8D2E3" stroke-width="1" />')
+
         lx = cx + math.cos(ang) * (max_r + 34)
         ly = cy + math.sin(ang) * (max_r + 34)
         anchor = "middle"
@@ -656,14 +709,24 @@ def render_radar_like_chart(result: BriefingResult):
             anchor = "end"
         elif lx > cx + 20:
             anchor = "start"
-        label_svg.append(f'<text x="{lx:.1f}" y="{ly:.1f}" font-size="13" text-anchor="{anchor}" fill="#2F1D4A" font-weight="600">{label}</text>')
+
+        label_svg.append(
+            f'<text x="{lx:.1f}" y="{ly:.1f}" font-size="13" text-anchor="{anchor}" fill="#2F1D4A" font-weight="600">{label}</text>'
+        )
 
     kte_poly, kte_pts = polygon_points(kte_vals)
     ell_poly, ell_pts = polygon_points(ell_vals)
-    kte_circles = ''.join(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4.5" fill="#5B2C83" stroke="white" stroke-width="1.2" />' for x, y in kte_pts)
-    ell_circles = ''.join(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4.5" fill="#B7A3C9" stroke="#5B2C83" stroke-width="1.0" />' for x, y in ell_pts)
 
-    svg = f'''
+    kte_circles = "".join(
+        f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4.5" fill="#5B2C83" stroke="white" stroke-width="1.2" />'
+        for x, y in kte_pts
+    )
+    ell_circles = "".join(
+        f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4.5" fill="#B7A3C9" stroke="#5B2C83" stroke-width="1.0" />'
+        for x, y in ell_pts
+    )
+
+    svg = f"""
     <svg width="{size}" height="{size}" viewBox="0 0 {size} {size}" xmlns="http://www.w3.org/2000/svg">
       <rect width="100%" height="100%" fill="white" />
       {''.join(grid_polys)}
@@ -678,7 +741,7 @@ def render_radar_like_chart(result: BriefingResult):
       <circle cx="470" cy="495" r="7" fill="#B7A3C9" stroke="#5B2C83" stroke-width="1" />
       <text x="485" y="500" font-size="14" fill="#2F1D4A">ELL</text>
     </svg>
-    '''
+    """
     components.html(svg, height=580)
 
 
@@ -687,7 +750,7 @@ st.sidebar.caption("D/P = Direkt / Presszing")
 
 step = st.sidebar.radio(
     "Lépés",
-    ["1. Input", "2. Review", "3. Output", "4. Export"],
+    ["1. Input", "2. Review", "3. Output", "4. Export", "5. Debug"],
     index=0,
 )
 
@@ -876,3 +939,56 @@ elif step == "4. Export":
         st.button("Export PPT")
         st.button("Export PDF")
         st.button("Print now")
+
+elif step == "5. Debug":
+    st.subheader("Excel Debug")
+
+    kte = st.file_uploader("KTE Excel", type=["xlsx"], key="debug_kte")
+    opp = st.file_uploader("Opponent Excel", type=["xlsx"], key="debug_opp")
+
+    if kte:
+        xls = pd.ExcelFile(kte)
+        st.write("KTE sheetek:")
+        st.write(xls.sheet_names)
+
+        for sheet in xls.sheet_names:
+            df = pd.read_excel(kte, sheet_name=sheet, header=None)
+            st.write("----")
+            st.write(sheet)
+            st.dataframe(df.head(20), use_container_width=True)
+
+        st.markdown("### KTE – parser találatok")
+        st.json(parse_excel_metrics(kte.getvalue()))
+
+    if opp:
+        xls = pd.ExcelFile(opp)
+        st.write("Opponent sheetek:")
+        st.write(xls.sheet_names)
+
+        for sheet in xls.sheet_names:
+            df = pd.read_excel(opp, sheet_name=sheet, header=None)
+            st.write("----")
+            st.write(sheet)
+            st.dataframe(df.head(20), use_container_width=True)
+
+        st.markdown("### Opponent – parser találatok")
+        st.json(parse_excel_metrics(opp.getvalue()))
+
+    if kte and opp:
+        st.markdown("### Gyors összehasonlítás")
+        kte_metrics = parse_excel_metrics(kte.getvalue())
+        opp_metrics = parse_excel_metrics(opp.getvalue())
+
+        rows = []
+        all_keys = sorted(set(list(kte_metrics.keys()) + list(opp_metrics.keys())))
+        for k in all_keys:
+            rows.append(
+                {
+                    "metric": k,
+                    "kte": kte_metrics.get(k, 0),
+                    "opp": opp_metrics.get(k, 0),
+                    "same": kte_metrics.get(k, 0) == opp_metrics.get(k, 0),
+                }
+            )
+
+        st.dataframe(pd.DataFrame(rows), use_container_width=True)
