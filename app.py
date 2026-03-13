@@ -4,6 +4,7 @@ from typing import Dict, Optional, List, Tuple
 
 import altair as alt
 import pandas as pd
+import pdfplumber
 import streamlit as st
 import streamlit.components.v1 as components
 
@@ -81,51 +82,15 @@ def normalize_score(v, a, b):
 # =========================================================
 
 STRATEGY_PALETTE = {
-    "KON": {
-        "name": "Kontra mély blokkból",
-        "block": "low",
-        "style": "direct",
-    },
-    "GAT": {
-        "name": "Gyors átmenet",
-        "block": "mid",
-        "style": "direct",
-    },
-    "BAT": {
-        "name": "Középső blokk + átmenet",
-        "block": "mid",
-        "style": "balanced",
-    },
-    "KIE": {
-        "name": "Kiegyensúlyozott",
-        "block": "mid",
-        "style": "balanced_control",
-    },
-    "PRS": {
-        "name": "Presszing + átmenet",
-        "block": "mid_high",
-        "style": "transition_press",
-    },
-    "MLT": {
-        "name": "Magas letámadás",
-        "block": "high",
-        "style": "aggressive",
-    },
-    "DOM": {
-        "name": "Dominancia",
-        "block": "high",
-        "style": "control",
-    },
-    "POZ": {
-        "name": "Pozíciós támadás",
-        "block": "mid_high",
-        "style": "control",
-    },
-    "LAB": {
-        "name": "Labdatartás mélyebben",
-        "block": "low_mid",
-        "style": "control",
-    },
+    "KON": {"name": "Kontra mély blokkból", "block": "low", "style": "direct"},
+    "GAT": {"name": "Gyors átmenet", "block": "mid", "style": "direct"},
+    "BAT": {"name": "Középső blokk + átmenet", "block": "mid", "style": "balanced"},
+    "KIE": {"name": "Kiegyensúlyozott", "block": "mid", "style": "balanced_control"},
+    "PRS": {"name": "Presszing + átmenet", "block": "mid_high", "style": "transition_press"},
+    "MLT": {"name": "Magas letámadás", "block": "high", "style": "aggressive"},
+    "DOM": {"name": "Dominancia", "block": "high", "style": "control"},
+    "POZ": {"name": "Pozíciós támadás", "block": "mid_high", "style": "control"},
+    "LAB": {"name": "Labdatartás mélyebben", "block": "low_mid", "style": "control"},
 }
 
 
@@ -259,9 +224,7 @@ def render_strategy_map(selected_a: Optional[str] = None, selected_b: Optional[s
 # =========================================================
 
 METRIC_ALIASES = {
-    "ppda": [
-        "ppda"
-    ],
+    "ppda": ["ppda"],
     "pressing_success_pct": [
         "team pressing successful, %",
         "pressing successful",
@@ -283,28 +246,16 @@ METRIC_ALIASES = {
         "box entries",
         "penalty box entries",
     ],
-    "key_passes": [
-        "key passes",
-        "key pass",
-    ],
-    "corners": [
-        "corners",
-        "corner kicks",
-    ],
+    "key_passes": ["key passes", "key pass"],
+    "corners": ["corners", "corner kicks"],
     "possession_pct": [
         "ball possession, %",
         "ball possession",
         "possession %",
         "ball possession %",
     ],
-    "shots": [
-        "shots",
-        "total shots",
-    ],
-    "xg": [
-        "xg",
-        "expected goals",
-    ],
+    "shots": ["shots", "total shots"],
+    "xg": ["xg", "expected goals"],
 }
 
 
@@ -461,8 +412,6 @@ def parse_excel_metrics_with_debug(file_bytes: bytes) -> Tuple[Dict[str, float],
 
 def rename_player_columns(df: pd.DataFrame) -> pd.DataFrame:
     col_map = {}
-    lowered = {str(c).lower(): c for c in df.columns}
-
     for target, aliases in PLAYER_COL_ALIASES.items():
         found = None
         for col in df.columns:
@@ -472,7 +421,6 @@ def rename_player_columns(df: pd.DataFrame) -> pd.DataFrame:
                 break
         if found is not None:
             col_map[found] = target
-
     return df.rename(columns=col_map)
 
 
@@ -495,20 +443,9 @@ def parse_player_excel(file_bytes: bytes) -> Dict[str, pd.DataFrame]:
     df["minutes_played"] = pd.to_numeric(df["minutes_played"], errors="coerce").fillna(0)
     df = df[df["minutes_played"] >= 300].copy()
 
-    for col in [
-        "passes",
-        "progressive_passes",
-        "key_passes",
-        "interceptions",
-        "defensive_challenges",
-    ]:
+    for col in ["passes", "progressive_passes", "key_passes", "interceptions", "defensive_challenges"]:
         if col in df.columns:
-            df[col] = (
-                df[col]
-                .astype(str)
-                .str.replace(",", ".", regex=False)
-                .replace("-", pd.NA)
-            )
+            df[col] = df[col].astype(str).str.replace(",", ".", regex=False).replace("-", pd.NA)
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
 
     if "passes" not in df.columns:
@@ -524,35 +461,11 @@ def parse_player_excel(file_bytes: bytes) -> Dict[str, pd.DataFrame]:
     if "position" not in df.columns:
         df["position"] = ""
 
-    creators = (
-        df.sort_values("key_passes", ascending=False)[["player", "position", "key_passes"]]
-        .head(3)
-        .reset_index(drop=True)
-    )
-
-    progressors = (
-        df.sort_values("progressive_passes", ascending=False)[["player", "position", "progressive_passes"]]
-        .head(3)
-        .reset_index(drop=True)
-    )
-
-    build_up = (
-        df.sort_values("passes", ascending=False)[["player", "position", "passes"]]
-        .head(3)
-        .reset_index(drop=True)
-    )
-
-    defenders = (
-        df.sort_values("interceptions", ascending=False)[["player", "position", "interceptions"]]
-        .head(3)
-        .reset_index(drop=True)
-    )
-
-    duel_players = (
-        df.sort_values("defensive_challenges", ascending=False)[["player", "position", "defensive_challenges"]]
-        .head(3)
-        .reset_index(drop=True)
-    )
+    creators = df.sort_values("key_passes", ascending=False)[["player", "position", "key_passes"]].head(3).reset_index(drop=True)
+    progressors = df.sort_values("progressive_passes", ascending=False)[["player", "position", "progressive_passes"]].head(3).reset_index(drop=True)
+    build_up = df.sort_values("passes", ascending=False)[["player", "position", "passes"]].head(3).reset_index(drop=True)
+    defenders = df.sort_values("interceptions", ascending=False)[["player", "position", "interceptions"]].head(3).reset_index(drop=True)
+    duel_players = df.sort_values("defensive_challenges", ascending=False)[["player", "position", "defensive_challenges"]].head(3).reset_index(drop=True)
 
     return {
         "creators": creators,
@@ -560,6 +473,87 @@ def parse_player_excel(file_bytes: bytes) -> Dict[str, pd.DataFrame]:
         "build_up": build_up,
         "defenders": defenders,
         "duel_players": duel_players,
+    }
+
+
+# =========================================================
+# PDF PARSER
+# =========================================================
+
+@st.cache_data(show_spinner=False)
+def extract_pdf_text(file_bytes: bytes, max_pages: int = 15) -> str:
+    text_chunks = []
+    try:
+        with pdfplumber.open(file_bytes) as pdf:
+            for page in pdf.pages[:max_pages]:
+                text_chunks.append(page.extract_text() or "")
+    except Exception:
+        return ""
+    return "\n".join(text_chunks)
+
+
+def combine_pdf_texts(files: List[object]) -> str:
+    texts = []
+    for f in files:
+        if f is not None:
+            texts.append(extract_pdf_text(f.getvalue()))
+    return "\n\n".join([t for t in texts if t.strip()])
+
+
+def extract_lines_with_keywords(text: str, keywords: List[str], limit: int = 6) -> List[str]:
+    out = []
+    lines = [x.strip() for x in text.splitlines() if x.strip()]
+    for line in lines:
+        line_norm = normalize_text(line)
+        if any(k in line_norm for k in keywords):
+            out.append(line)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def infer_formation(text: str) -> Optional[str]:
+    m = re.search(r"\b([3-5]-[1-5]-[1-5](?:-[1-3])?)\b", text)
+    if m:
+        return m.group(1)
+    return None
+
+
+def build_pdf_insights(text: str) -> Dict[str, List[str] | str]:
+    text_norm = normalize_text(text)
+
+    formation = infer_formation(text)
+
+    dna_lines = extract_lines_with_keywords(
+        text,
+        ["press", "pressing", "build-up", "build up", "transition", "counter", "direct", "possession"],
+        limit=6,
+    )
+
+    risk_lines = extract_lines_with_keywords(
+        text,
+        ["weakness", "risk", "vulnerable", "exposed", "set piece", "cross", "transition", "counter"],
+        limit=6,
+    )
+
+    set_piece_lines = extract_lines_with_keywords(
+        text,
+        ["corner", "free kick", "set piece", "header", "aerial"],
+        limit=5,
+    )
+
+    dynamics_lines = extract_lines_with_keywords(
+        text,
+        ["first half", "second half", "tempo", "start", "late phase", "after losing", "after winning"],
+        limit=5,
+    )
+
+    return {
+        "formation": formation or "n.a.",
+        "dna_lines": dna_lines,
+        "risk_lines": risk_lines,
+        "set_piece_lines": set_piece_lines,
+        "dynamics_lines": dynamics_lines,
     }
 
 
@@ -603,7 +597,14 @@ def distinct_metric_count(team_metrics: Dict[str, float], opp_metrics: Dict[str,
     return sum(1 for k in keys if team_metrics.get(k, 0) != opp_metrics.get(k, 0))
 
 
-def run_engine(team_match_file, opp_match_file, team_player_file=None, opp_player_file=None):
+def run_engine(
+    team_match_file,
+    opp_match_file,
+    team_player_file=None,
+    opp_player_file=None,
+    team_pdf_files=None,
+    opp_pdf_files=None,
+):
     team_metrics, team_debug_rows, team_sheet_debug, team_matches = parse_excel_metrics_with_debug(team_match_file.getvalue())
     opp_metrics, opp_debug_rows, opp_sheet_debug, opp_matches = parse_excel_metrics_with_debug(opp_match_file.getvalue())
 
@@ -632,6 +633,12 @@ def run_engine(team_match_file, opp_match_file, team_player_file=None, opp_playe
     team_players = parse_player_excel(team_player_file.getvalue()) if team_player_file else None
     opp_players = parse_player_excel(opp_player_file.getvalue()) if opp_player_file else None
 
+    team_pdf_text = combine_pdf_texts(team_pdf_files or [])
+    opp_pdf_text = combine_pdf_texts(opp_pdf_files or [])
+
+    team_pdf_insights = build_pdf_insights(team_pdf_text) if team_pdf_text.strip() else None
+    opp_pdf_insights = build_pdf_insights(opp_pdf_text) if opp_pdf_text.strip() else None
+
     warnings = []
     if opp_players is not None and not opp_players["creators"].empty:
         row = opp_players["creators"].iloc[0]
@@ -642,6 +649,10 @@ def run_engine(team_match_file, opp_match_file, team_player_file=None, opp_playe
     if opp_players is not None and not opp_players["duel_players"].empty:
         row = opp_players["duel_players"].iloc[0]
         warnings.append(f"{row['player']} – párharcerős profil, második labdákra figyelni.")
+
+    if opp_pdf_insights and opp_pdf_insights["risk_lines"]:
+        warnings.extend(opp_pdf_insights["risk_lines"][:2])
+
     if not warnings:
         warnings = [
             "A fő progressziós csatornákat korán zárni.",
@@ -664,6 +675,10 @@ def run_engine(team_match_file, opp_match_file, team_player_file=None, opp_playe
         team_players,
         opp_players,
         warnings,
+        team_pdf_text,
+        opp_pdf_text,
+        team_pdf_insights,
+        opp_pdf_insights,
     )
 
 
@@ -695,9 +710,9 @@ def render_radar_svg(dims: Dict[str, Dict[str, float]]):
     kte_vals = [dims[x]["KTE"] for x in labels]
     ell_vals = [dims[x]["ELL"] for x in labels]
 
-    size = 620
-    cx, cy = 280, 280
-    max_r = 180
+    size = 760
+    cx, cy = 300, 300
+    max_r = 185
     n = len(labels)
 
     def polygon_points(values: List[float]):
@@ -731,28 +746,28 @@ def render_radar_svg(dims: Dict[str, Dict[str, float]]):
         y2 = cy + math.sin(ang) * max_r
         axes.append(f'<line x1="{cx}" y1="{cy}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="#D8D2E3" stroke-width="1" />')
 
-        lx = cx + math.cos(ang) * (max_r + 40)
-        ly = cy + math.sin(ang) * (max_r + 40)
+        lx = cx + math.cos(ang) * (max_r + 55)
+        ly = cy + math.sin(ang) * (max_r + 55)
 
         anchor = "middle"
-        if lx < cx - 20:
+        if lx < cx - 25:
             anchor = "end"
-        elif lx > cx + 20:
+        elif lx > cx + 25:
             anchor = "start"
 
         label_svg.append(
-            f'<text x="{lx:.1f}" y="{ly:.1f}" font-size="15" text-anchor="{anchor}" fill="#2F1D4A" font-weight="600">{label}</text>'
+            f'<text x="{lx:.1f}" y="{ly:.1f}" font-size="16" text-anchor="{anchor}" fill="#2F1D4A" font-weight="600">{label}</text>'
         )
 
     kte_poly, kte_pts = polygon_points(kte_vals)
     ell_poly, ell_pts = polygon_points(ell_vals)
 
     kte_circles = "".join(
-        f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4.5" fill="#5B2C83" stroke="white" stroke-width="1.2" />'
+        f'<circle cx="{x:.1f}" cy="{y:.1f}" r="5" fill="#5B2C83" stroke="white" stroke-width="1.3" />'
         for x, y in kte_pts
     )
     ell_circles = "".join(
-        f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4.5" fill="#B7A3C9" stroke="#5B2C83" stroke-width="1.0" />'
+        f'<circle cx="{x:.1f}" cy="{y:.1f}" r="5" fill="#B7A3C9" stroke="#5B2C83" stroke-width="1.0" />'
         for x, y in ell_pts
     )
 
@@ -766,13 +781,13 @@ def render_radar_svg(dims: Dict[str, Dict[str, float]]):
       {ell_circles}
       {kte_circles}
       {''.join(label_svg)}
-      <circle cx="455" cy="560" r="7" fill="#5B2C83" />
-      <text x="470" y="565" font-size="15" fill="#2F1D4A">KTE</text>
-      <circle cx="520" cy="560" r="7" fill="#B7A3C9" stroke="#5B2C83" stroke-width="1" />
-      <text x="535" y="565" font-size="15" fill="#2F1D4A">ELL</text>
+      <circle cx="560" cy="690" r="8" fill="#5B2C83" />
+      <text x="578" y="696" font-size="16" fill="#2F1D4A">KTE</text>
+      <circle cx="640" cy="690" r="8" fill="#B7A3C9" stroke="#5B2C83" stroke-width="1" />
+      <text x="658" y="696" font-size="16" fill="#2F1D4A">ELL</text>
     </svg>
     """
-    components.html(svg, height=650)
+    components.html(svg, height=760)
 
 
 # =========================================================
@@ -795,6 +810,10 @@ defaults = {
     "team_players": None,
     "opp_players": None,
     "warnings": None,
+    "team_pdf_text": "",
+    "opp_pdf_text": "",
+    "team_pdf_insights": None,
+    "opp_pdf_insights": None,
 }
 
 for k, v in defaults.items():
@@ -821,17 +840,24 @@ step = st.sidebar.radio(
 # =========================================================
 
 if step == "1. Input":
-    st.header("Excel feltöltés")
+    st.header("Inputok feltöltése")
 
     c1, c2 = st.columns(2)
 
     with c1:
+        st.subheader("KTE")
         kte_match = st.file_uploader("KTE Match Excel", type=["xlsx"], key="kte_match")
         kte_player = st.file_uploader("KTE Player Excel", type=["xlsx"], key="kte_player")
+        kte_pdf_1 = st.file_uploader("KTE PDF 1", type=["pdf"], key="kte_pdf_1")
+        kte_pdf_2 = st.file_uploader("KTE PDF 2", type=["pdf"], key="kte_pdf_2")
 
     with c2:
+        st.subheader("Opponent")
         opp_match = st.file_uploader("Opponent Match Excel", type=["xlsx"], key="opp_match")
         opp_player = st.file_uploader("Opponent Player Excel", type=["xlsx"], key="opp_player")
+        opp_pdf_1 = st.file_uploader("Opponent PDF 1", type=["pdf"], key="opp_pdf_1")
+        opp_pdf_2 = st.file_uploader("Opponent PDF 2", type=["pdf"], key="opp_pdf_2")
+        opp_pdf_3 = st.file_uploader("Opponent PDF 3", type=["pdf"], key="opp_pdf_3")
 
     if kte_match and opp_match:
         (
@@ -850,7 +876,18 @@ if step == "1. Input":
             team_players,
             opp_players,
             warnings,
-        ) = run_engine(kte_match, opp_match, kte_player, opp_player)
+            team_pdf_text,
+            opp_pdf_text,
+            team_pdf_insights,
+            opp_pdf_insights,
+        ) = run_engine(
+            kte_match,
+            opp_match,
+            kte_player,
+            opp_player,
+            [kte_pdf_1, kte_pdf_2],
+            [opp_pdf_1, opp_pdf_2, opp_pdf_3],
+        )
 
         st.session_state["dims"] = dims
         st.session_state["team_metrics"] = team_metrics
@@ -867,6 +904,10 @@ if step == "1. Input":
         st.session_state["team_players"] = team_players
         st.session_state["opp_players"] = opp_players
         st.session_state["warnings"] = warnings
+        st.session_state["team_pdf_text"] = team_pdf_text
+        st.session_state["opp_pdf_text"] = opp_pdf_text
+        st.session_state["team_pdf_insights"] = team_pdf_insights
+        st.session_state["opp_pdf_insights"] = opp_pdf_insights
 
         st.success("Adatok feldolgozva.")
 
@@ -899,6 +940,7 @@ if step == "2. Review":
     opp_matches = st.session_state.get("opp_matches")
     opp_players = st.session_state.get("opp_players")
     warnings = st.session_state.get("warnings")
+    opp_pdf_insights = st.session_state.get("opp_pdf_insights")
 
     if not dims:
         st.warning("Előbb tölts fel adatot az Input fülön.")
@@ -977,6 +1019,21 @@ if step == "2. Review":
         else:
             st.info("Nincs opponent player Excel feltöltve.")
 
+        st.subheader("Opponent DNA")
+        if opp_pdf_insights:
+            d1, d2 = st.columns(2)
+            with d1:
+                st.write("Formáció:", opp_pdf_insights["formation"])
+                st.write("DNA sorok:")
+                for line in opp_pdf_insights["dna_lines"][:5]:
+                    st.write(f"- {line}")
+            with d2:
+                st.write("Set piece / dynamics:")
+                for line in (opp_pdf_insights["set_piece_lines"][:3] + opp_pdf_insights["dynamics_lines"][:2]):
+                    st.write(f"- {line}")
+        else:
+            st.info("Nincs opponent PDF insight.")
+
         st.subheader("Tactical warnings")
         if warnings:
             for w in warnings:
@@ -1004,21 +1061,6 @@ if step == "2. Review":
                 "KTE": round(team_metrics.get("corners", 0) / max(team_matches or 1, 1), 2),
                 "ELL": round(opp_metrics.get("corners", 0) / max(opp_matches or 1, 1), 2),
             },
-            {
-                "mutató": "passes_accurate_pct",
-                "KTE": round((team_metrics.get("passes_accurate_pct", 0) * 100) if team_metrics.get("passes_accurate_pct", 0) <= 1 else team_metrics.get("passes_accurate_pct", 0), 2),
-                "ELL": round((opp_metrics.get("passes_accurate_pct", 0) * 100) if opp_metrics.get("passes_accurate_pct", 0) <= 1 else opp_metrics.get("passes_accurate_pct", 0), 2),
-            },
-            {
-                "mutató": "pressing_success_pct",
-                "KTE": round((team_metrics.get("pressing_success_pct", 0) * 100) if team_metrics.get("pressing_success_pct", 0) <= 1 else team_metrics.get("pressing_success_pct", 0), 2),
-                "ELL": round((opp_metrics.get("pressing_success_pct", 0) * 100) if opp_metrics.get("pressing_success_pct", 0) <= 1 else opp_metrics.get("pressing_success_pct", 0), 2),
-            },
-            {
-                "mutató": "possession_pct",
-                "KTE": round((team_metrics.get("possession_pct", 0) * 100) if team_metrics.get("possession_pct", 0) <= 1 else team_metrics.get("possession_pct", 0), 2),
-                "ELL": round((opp_metrics.get("possession_pct", 0) * 100) if opp_metrics.get("possession_pct", 0) <= 1 else opp_metrics.get("possession_pct", 0), 2),
-            },
         ]
         st.dataframe(pd.DataFrame(scaling_rows), use_container_width=True)
 
@@ -1026,14 +1068,16 @@ if step == "2. Review":
         briefing_left, briefing_right = st.columns(2)
 
         with briefing_left:
+            opp_formation = opp_pdf_insights["formation"] if opp_pdf_insights else "n.a."
             st.text_area(
                 "Ellenfél profil",
                 value=(
+                    f"Formáció: {opp_formation} | "
                     f"Labdabirtoklás: {round((opp_metrics.get('possession_pct', 0) * 100) if opp_metrics.get('possession_pct', 0) <= 1 else opp_metrics.get('possession_pct', 0), 1)}% | "
                     f"Lövések / meccs: {round(opp_metrics.get('shots', 0) / max(opp_matches or 1, 1), 2)} | "
                     f"Box entries / meccs: {round(opp_metrics.get('entries_box', 0) / max(opp_matches or 1, 1), 2)}"
                 ),
-                height=100,
+                height=120,
             )
             st.text_area(
                 "Saját állapot",
@@ -1042,24 +1086,29 @@ if step == "2. Review":
                     f"KTE lövések / meccs: {round(team_metrics.get('shots', 0) / max(team_matches or 1, 1), 2)} | "
                     f"KTE key passes / meccs: {round(team_metrics.get('key_passes', 0) / max(team_matches or 1, 1), 2)}"
                 ),
-                height=100,
+                height=120,
             )
 
         with briefing_right:
             warning_text = "\n".join([f"- {w}" for w in warnings]) if warnings else ""
+            dna_text = ""
+            if opp_pdf_insights and opp_pdf_insights["dna_lines"]:
+                dna_text = "\n".join([f"- {x}" for x in opp_pdf_insights["dna_lines"][:3]])
+
             st.text_area(
                 "3 kulcs / Warnings",
                 value=warning_text,
-                height=100,
+                height=120,
             )
             st.text_area(
-                "Konklúzió",
+                "Opponent DNA / Konklúzió",
                 value=(
+                    f"{dna_text}\n\n"
                     f"Ajánlott fő stratégia: {st.session_state['selected_plan_a']} – {STRATEGY_PALETTE[st.session_state['selected_plan_a']]['name']}\n"
                     f"Alternatíva: {st.session_state['selected_plan_b']} – {STRATEGY_PALETTE[st.session_state['selected_plan_b']]['name']}\n"
                     f"Javasolt megoszlás: {st.session_state['selected_split']}/{100 - st.session_state['selected_split']}"
                 ),
-                height=100,
+                height=140,
             )
 
 
@@ -1074,6 +1123,8 @@ if step == "3. Debug":
     opp_match = st.file_uploader("Opponent Match Excel", type=["xlsx"], key="opp_debug_match")
     kte_player = st.file_uploader("KTE Player Excel", type=["xlsx"], key="kte_debug_player")
     opp_player = st.file_uploader("Opponent Player Excel", type=["xlsx"], key="opp_debug_player")
+    kte_pdf = st.file_uploader("KTE PDF", type=["pdf"], key="kte_debug_pdf")
+    opp_pdf = st.file_uploader("Opponent PDF", type=["pdf"], key="opp_debug_pdf")
 
     if kte_match:
         team_metrics, team_debug_rows, team_sheet_debug, team_matches = parse_excel_metrics_with_debug(kte_match.getvalue())
@@ -1085,19 +1136,6 @@ if step == "3. Debug":
         st.subheader("KTE metrika → oszlop illesztés")
         st.dataframe(pd.DataFrame(team_debug_rows), use_container_width=True)
 
-        st.subheader("KTE match sheet debug")
-        for item in team_sheet_debug:
-            st.markdown(f"### KTE sheet: {item['sheet_name']}")
-            st.dataframe(item["preview"], use_container_width=True)
-            st.markdown("**Fejlécsor (0. sor):**")
-            st.write(item["header_row"])
-            st.markdown("**Total sor index:**")
-            st.write(item["total_row_index"])
-            st.markdown("**Meccsszám:**")
-            st.write(item["match_count"])
-            st.markdown("**Total sor értékei:**")
-            st.write(item["total_row_values"])
-
     if opp_match:
         opp_metrics, opp_debug_rows, opp_sheet_debug, opp_matches = parse_excel_metrics_with_debug(opp_match.getvalue())
 
@@ -1108,24 +1146,11 @@ if step == "3. Debug":
         st.subheader("Opponent metrika → oszlop illesztés")
         st.dataframe(pd.DataFrame(opp_debug_rows), use_container_width=True)
 
-        st.subheader("Opponent match sheet debug")
-        for item in opp_sheet_debug:
-            st.markdown(f"### Opponent sheet: {item['sheet_name']}")
-            st.dataframe(item["preview"], use_container_width=True)
-            st.markdown("**Fejlécsor (0. sor):**")
-            st.write(item["header_row"])
-            st.markdown("**Total sor index:**")
-            st.write(item["total_row_index"])
-            st.markdown("**Meccsszám:**")
-            st.write(item["match_count"])
-            st.markdown("**Total sor értékei:**")
-            st.write(item["total_row_values"])
-
     if kte_match and opp_match:
         st.subheader("KTE vs Opponent – nyers metrika összehasonlítás")
 
-        team_metrics, team_debug_rows, _, team_matches = parse_excel_metrics_with_debug(kte_match.getvalue())
-        opp_metrics, opp_debug_rows, _, opp_matches = parse_excel_metrics_with_debug(opp_match.getvalue())
+        team_metrics, team_debug_rows, _, _ = parse_excel_metrics_with_debug(kte_match.getvalue())
+        opp_metrics, opp_debug_rows, _, _ = parse_excel_metrics_with_debug(opp_match.getvalue())
 
         compare_rows = []
         all_keys = sorted(set(list(team_metrics.keys()) + list(opp_metrics.keys())))
@@ -1161,3 +1186,15 @@ if step == "3. Debug":
         for key, df in opp_players.items():
             st.write(key.upper())
             st.dataframe(df, use_container_width=True)
+
+    if kte_pdf:
+        st.subheader("KTE PDF text preview")
+        text = extract_pdf_text(kte_pdf.getvalue())
+        st.text_area("KTE PDF extracted text", value=text[:4000], height=250)
+        st.write(build_pdf_insights(text))
+
+    if opp_pdf:
+        st.subheader("Opponent PDF text preview")
+        text = extract_pdf_text(opp_pdf.getvalue())
+        st.text_area("Opponent PDF extracted text", value=text[:4000], height=250)
+        st.write(build_pdf_insights(text))
