@@ -1,10 +1,11 @@
 import streamlit as st
 import pandas as pd
 import re
+import math
+import altair as alt
 from typing import Dict, Optional, List, Tuple
 
 st.set_page_config(page_title="Tactical Briefing Engine", layout="wide")
-
 
 # ----------------------------------------------------
 # UTIL
@@ -13,213 +14,236 @@ st.set_page_config(page_title="Tactical Briefing Engine", layout="wide")
 def safe_float(x, default=0.0):
     try:
         return float(str(x).replace(",", ".").replace("%", "").strip())
-    except Exception:
+    except:
         return default
 
 
-def normalize_text(x) -> str:
+def normalize_text(x):
     return str(x).strip().lower()
 
 
-def is_empty(x) -> bool:
-    s = normalize_text(x)
-    return s in {"", "nan", "none"}
+def parse_percent(x):
 
+    s = str(x)
 
-def parse_percent_like(x) -> Optional[float]:
-    s = str(x).strip()
     m = re.fullmatch(r"(-?\d+(?:[.,]\d+)?)\s*%", s)
+
     if m:
         return safe_float(m.group(1))
+
     return None
 
 
-def parse_number_like(x) -> Optional[float]:
-    s = str(x).strip()
+def parse_number(x):
+
+    s = str(x)
+
     if re.fullmatch(r"-?\d+(?:[.,]\d+)?", s):
+
         return safe_float(s)
+
     return None
 
 
-def parse_ratio_like(x) -> Optional[Tuple[float, float]]:
-    s = str(x).strip()
-    m = re.fullmatch(r"(-?\d+(?:[.,]\d+)?)\s*/\s*(-?\d+(?:[.,]\d+)?)", s)
-    if m:
-        return safe_float(m.group(1)), safe_float(m.group(2))
-    return None
+def coerce_value(x):
 
+    pct = parse_percent(x)
 
-def coerce_cell_value(x):
-    pct = parse_percent_like(x)
     if pct is not None:
         return pct
 
-    num = parse_number_like(x)
+    num = parse_number(x)
+
     if num is not None:
         return num
-
-    ratio = parse_ratio_like(x)
-    if ratio is not None:
-        return ratio[0]
 
     return x
 
 
 # ----------------------------------------------------
-# ALIASES
-# Ezeket később tovább lehet finomítani a konkrét exporthoz
+# METRIC ALIASES
 # ----------------------------------------------------
 
 METRIC_ALIASES = {
-    "ppda": [
-        "ppda"
-    ],
-    "pressing_success_pct": [
-        "pressing successful",
-        "successful pressing",
-        "pressing success",
-        "pressing %"
-    ],
-    "passes_accurate_pct": [
-        "passes accurate",
-        "accurate passes %",
-        "pass accuracy",
-        "passes / accurate"
-    ],
-    "entries_box": [
-        "entrances to the opponent's box",
-        "entrances to opponents box",
-        "entries into box",
-        "box entries",
-        "penalty box entries"
-    ],
-    "key_passes": [
-        "key passes",
-        "key pass"
-    ],
-    "corners": [
-        "corners",
-        "corner kicks"
-    ],
-    "possession_pct": [
-        "ball possession",
-        "possession %",
-        "ball possession %"
-    ],
-    "shots": [
-        "shots",
-        "total shots"
-    ],
-    "xg": [
-        "xg",
-        "expected goals"
-    ]
+
+"pressing_success_pct":[
+"pressing",
+"successful pressing"
+],
+
+"passes_accurate_pct":[
+"passes accurate",
+"pass accuracy"
+],
+
+"entries_box":[
+"entrances to the opponent's box",
+"box entries"
+],
+
+"key_passes":[
+"key passes"
+],
+
+"corners":[
+"corners"
+],
+
+"possession_pct":[
+"ball possession"
+],
+
+"shots":[
+"shots"
+],
+
+"xg":[
+"xg"
+]
+
 }
 
 
 # ----------------------------------------------------
-# COLUMN-ORIENTED PARSER
+# PARSER
 # ----------------------------------------------------
 
-def find_total_row_index(df: pd.DataFrame) -> Optional[int]:
+def find_total_row(df):
+
     for r in range(df.shape[0]):
-        first_val = normalize_text(df.iat[r, 0])
-        if first_val == "total":
+
+        if normalize_text(df.iat[r,0]) == "total":
+
             return r
+
     return None
 
 
-def build_header_map(df: pd.DataFrame) -> Dict[int, str]:
+def build_headers(df):
+
     headers = {}
-    if df.shape[0] == 0:
-        return headers
 
     for c in range(df.shape[1]):
-        headers[c] = normalize_text(df.iat[0, c])
+
+        headers[c] = normalize_text(df.iat[0,c])
+
     return headers
 
 
-def find_column_by_aliases(header_map: Dict[int, str], aliases: List[str]) -> Optional[int]:
-    for c, h in header_map.items():
-        if is_empty(h):
-            continue
+def find_column(headers, aliases):
+
+    for c,h in headers.items():
+
         for alias in aliases:
-            a = normalize_text(alias)
-            if a == h or a in h:
+
+            if alias in h:
+
                 return c
+
     return None
 
 
-def parse_main_statistics_sheet(df: pd.DataFrame) -> Dict[str, float]:
-    metrics: Dict[str, float] = {}
+def parse_main_sheet(df):
 
-    total_row = find_total_row_index(df)
+    metrics = {}
+
+    total_row = find_total_row(df)
+
     if total_row is None:
+
         return metrics
 
-    header_map = build_header_map(df)
+    headers = build_headers(df)
 
-    for metric_key, aliases in METRIC_ALIASES.items():
-        col = find_column_by_aliases(header_map, aliases)
+    for key,aliases in METRIC_ALIASES.items():
+
+        col = find_column(headers, aliases)
+
         if col is None:
             continue
 
-        raw_val = df.iat[total_row, col]
-        val = coerce_cell_value(raw_val)
+        val = coerce_value(df.iat[total_row,col])
 
-        if isinstance(val, (int, float)):
-            metrics[metric_key] = float(val)
+        if isinstance(val,(int,float)):
+
+            metrics[key] = val
 
     return metrics
 
 
-@st.cache_data(show_spinner=False)
-def parse_excel_metrics(file_bytes: bytes) -> Dict[str, float]:
-    metrics: Dict[str, float] = {}
+@st.cache_data
+def parse_excel_metrics(file_bytes):
+
+    metrics = {}
 
     xls = pd.ExcelFile(file_bytes)
 
     for sheet in xls.sheet_names:
-        try:
-            df = pd.read_excel(file_bytes, sheet_name=sheet, header=None)
-        except Exception:
-            continue
 
-        sheet_name = normalize_text(sheet)
+        df = pd.read_excel(file_bytes, sheet_name=sheet, header=None)
 
-        if "main statistics" in sheet_name:
-            sheet_metrics = parse_main_statistics_sheet(df)
-            metrics.update(sheet_metrics)
+        if "main statistics" in normalize_text(sheet):
+
+            metrics.update(parse_main_sheet(df))
 
     return metrics
 
 
 # ----------------------------------------------------
-# SIMPLE SCORING
+# SCORING
 # ----------------------------------------------------
 
-def clamp(x, lo=1.0, hi=10.0):
-    return max(lo, min(hi, x))
+def clamp(x):
+
+    return max(1,min(10,x))
 
 
-def normalize_score(v, a, b):
+def normalize(v,a,b):
+
     if v == 0:
-        return 5.0
-    if b <= a:
-        return 5.0
-    return clamp(1 + 9 * ((v - a) / (b - a)))
+        return 5
+
+    return clamp(1 + 9 * (v-a)/(b-a))
 
 
-def score_dimensions(metrics: Dict[str, float]) -> Dict[str, float]:
+def score(metrics):
+
     return {
-        "Letámadás": round(normalize_score(metrics.get("pressing_success_pct", 0), 25, 70), 1),
-        "Labdakihozatal": round(normalize_score(metrics.get("passes_accurate_pct", 0), 60, 90), 1),
-        "Átmenetek": round(normalize_score(metrics.get("entries_box", 0), 5, 30), 1),
-        "Támadó játék": round(normalize_score(metrics.get("key_passes", 0), 1, 15), 1),
-        "Pontrúgások": round(normalize_score(metrics.get("corners", 0), 1, 10), 1),
-        "Labdabirtoklás": round(normalize_score(metrics.get("possession_pct", 0), 35, 65), 1),
-        "Lövésprofil": round(normalize_score(metrics.get("shots", 0), 4, 20), 1),
-    }
+
+"Letámadás":round(normalize(metrics.get("pressing_success_pct",0),25,70),1),
+
+"Labdakihozatal":round(normalize(metrics.get("passes_accurate_pct",0),60,90),1),
+
+"Átmenetek":round(normalize(metrics.get("entries_box",0),5,30),1),
+
+"Támadó játék":round(normalize(metrics.get("key_passes",0),1,15),1),
+
+"Pontrúgások":round(normalize(metrics.get("corners",0),1,10),1),
+
+"Labdabirtoklás":round(normalize(metrics.get("possession_pct",0),40,65),1),
+
+"Lövések":round(normalize(metrics.get("shots",0),4,20),1)
+
+}
+
+
+# ----------------------------------------------------
+# STRATEGY PALETTE
+# ----------------------------------------------------
+
+STRATEGY_PALETTE = {
+
+"KON":"Kontra mély blokkból",
+"GAT":"Gyors átmenet",
+"BAT":"Középső blokk + átmenet",
+"KIE":"Kiegyensúlyozott",
+"PRS":"Presszing + átmenet",
+"MLT":"Magas letámadás",
+"DOM":"Dominancia",
+"POZ":"Pozíciós támadás",
+"LAB":"Labdatartás"
+
+}
 
 
 # ----------------------------------------------------
@@ -227,52 +251,88 @@ def score_dimensions(metrics: Dict[str, float]) -> Dict[str, float]:
 # ----------------------------------------------------
 
 def run_engine(team_file, opp_file):
+
     team_metrics = parse_excel_metrics(team_file.getvalue())
+
     opp_metrics = parse_excel_metrics(opp_file.getvalue())
 
-    team_scores = score_dimensions(team_metrics)
-    opp_scores = score_dimensions(opp_metrics)
+    team_scores = score(team_metrics)
+
+    opp_scores = score(opp_metrics)
 
     dims = {}
+
     for k in team_scores:
+
         dims[k] = {
-            "KTE": team_scores[k],
-            "ELL": opp_scores[k],
-            "Edge": round(team_scores[k] - opp_scores[k], 1)
-        }
+
+"KTE":team_scores[k],
+"ELL":opp_scores[k],
+"Edge":round(team_scores[k]-opp_scores[k],1)
+
+}
 
     return dims, team_metrics, opp_metrics
 
 
 # ----------------------------------------------------
-# DEBUG HELPERS
+# RADAR
 # ----------------------------------------------------
 
-def debug_sheet_info(file_obj):
-    xls = pd.ExcelFile(file_obj)
-    out = []
+def radar_chart(dims):
 
-    for sheet in xls.sheet_names:
-        try:
-            df = pd.read_excel(file_obj, sheet_name=sheet, header=None)
-        except Exception:
-            continue
+    categories = list(dims.keys())
 
-        info = {
-            "sheet_name": sheet,
-            "preview": df.head(8),
-            "header_row": df.iloc[0].astype(str).tolist() if df.shape[0] > 0 else [],
-            "total_row_index": find_total_row_index(df),
-            "total_row_values": None
-        }
+    kte = [dims[x]["KTE"] for x in categories]
 
-        total_idx = info["total_row_index"]
-        if total_idx is not None:
-            info["total_row_values"] = df.iloc[total_idx].astype(str).tolist()
+    opp = [dims[x]["ELL"] for x in categories]
 
-        out.append(info)
+    df = pd.DataFrame({
 
-    return out
+"dim":categories,
+"KTE":kte,
+"ELL":opp
+
+})
+
+    df = df.melt("dim", var_name="team", value_name="score")
+
+    chart = alt.Chart(df).mark_line(point=True).encode(
+
+theta="dim:N",
+radius="score:Q",
+color="team:N"
+
+).properties(height=400)
+
+    st.altair_chart(chart, use_container_width=True)
+
+
+# ----------------------------------------------------
+# BAR
+# ----------------------------------------------------
+
+def bar_chart(dims):
+
+    rows=[]
+
+    for k,v in dims.items():
+
+        rows.append({"dim":k,"team":"KTE","score":v["KTE"]})
+        rows.append({"dim":k,"team":"ELL","score":v["ELL"]})
+
+    df=pd.DataFrame(rows)
+
+    chart=alt.Chart(df).mark_bar().encode(
+
+x="dim:N",
+y="score:Q",
+color="team:N",
+xOffset="team:N"
+
+)
+
+    st.altair_chart(chart,use_container_width=True)
 
 
 # ----------------------------------------------------
@@ -281,77 +341,94 @@ def debug_sheet_info(file_obj):
 
 st.title("Tactical Briefing Engine")
 
-step = st.sidebar.radio("Lépés", ["Input", "Debug"], index=0)
+step = st.sidebar.radio(
 
-if step == "Input":
-    st.header("Excel feltöltés")
+"Lépés",
 
-    kte = st.file_uploader("KTE Excel", type=["xlsx"], key="kte_input")
-    opp = st.file_uploader("Opponent Excel", type=["xlsx"], key="opp_input")
+["Input","Review","Debug"]
+
+)
+
+
+# ----------------------------------------------------
+# INPUT
+# ----------------------------------------------------
+
+if step=="Input":
+
+    kte = st.file_uploader("KTE Excel",type=["xlsx"])
+
+    opp = st.file_uploader("Opponent Excel",type=["xlsx"])
 
     if kte and opp:
-        dims, team_metrics, opp_metrics = run_engine(kte, opp)
 
-        st.subheader("Kinyert metrikák – KTE")
-        st.json(team_metrics)
+        dims, tm, om = run_engine(kte,opp)
 
-        st.subheader("Kinyert metrikák – Ellenfél")
-        st.json(opp_metrics)
+        st.session_state["dims"] = dims
+        st.session_state["team_metrics"] = tm
+        st.session_state["opp_metrics"] = om
 
-        st.subheader("Dimenziók")
-        st.dataframe(pd.DataFrame(dims).T, use_container_width=True)
+        st.success("Adatok feldolgozva")
 
-elif step == "Debug":
-    st.header("Debug")
 
-    kte = st.file_uploader("KTE Excel", type=["xlsx"], key="kte_debug")
-    opp = st.file_uploader("Opponent Excel", type=["xlsx"], key="opp_debug")
+# ----------------------------------------------------
+# REVIEW
+# ----------------------------------------------------
+
+if step=="Review":
+
+    dims = st.session_state.get("dims")
+
+    if not dims:
+
+        st.warning("Előbb tölts fel adatot")
+
+    else:
+
+        col1,col2 = st.columns(2)
+
+        with col1:
+
+            st.subheader("Pókháló")
+
+            radar_chart(dims)
+
+        with col2:
+
+            st.subheader("Dimenziók")
+
+            bar_chart(dims)
+
+        st.subheader("Stratégiai opciók")
+
+        plan_a = st.selectbox("Plan A",list(STRATEGY_PALETTE.keys()))
+
+        plan_b = st.selectbox("Plan B",list(STRATEGY_PALETTE.keys()))
+
+        split = st.slider("Plan A arány",50,70,60)
+
+        st.write("Plan A:",STRATEGY_PALETTE[plan_a])
+        st.write("Plan B:",STRATEGY_PALETTE[plan_b])
+
+
+# ----------------------------------------------------
+# DEBUG
+# ----------------------------------------------------
+
+if step=="Debug":
+
+    kte = st.file_uploader("KTE Excel",type=["xlsx"],key="d1")
 
     if kte:
-        st.subheader("KTE parser")
+
         st.json(parse_excel_metrics(kte.getvalue()))
 
-        st.subheader("KTE sheet debug")
-        kte_info = debug_sheet_info(kte)
-        for item in kte_info:
-            st.markdown(f"### KTE sheet: {item['sheet_name']}")
-            st.dataframe(item["preview"], use_container_width=True)
-            st.markdown("**Fejlécsor (0. sor):**")
-            st.write(item["header_row"])
-            st.markdown("**Total sor index:**")
-            st.write(item["total_row_index"])
-            st.markdown("**Total sor értékei:**")
-            st.write(item["total_row_values"])
+        xls = pd.ExcelFile(kte)
 
-    if opp:
-        st.subheader("Opponent parser")
-        st.json(parse_excel_metrics(opp.getvalue()))
+        for sheet in xls.sheet_names:
 
-        st.subheader("Opponent sheet debug")
-        opp_info = debug_sheet_info(opp)
-        for item in opp_info:
-            st.markdown(f"### Opponent sheet: {item['sheet_name']}")
-            st.dataframe(item["preview"], use_container_width=True)
-            st.markdown("**Fejlécsor (0. sor):**")
-            st.write(item["header_row"])
-            st.markdown("**Total sor index:**")
-            st.write(item["total_row_index"])
-            st.markdown("**Total sor értékei:**")
-            st.write(item["total_row_values"])
+            df = pd.read_excel(kte,sheet_name=sheet)
 
-    if kte and opp:
-        st.subheader("Gyors összehasonlítás")
-        kte_metrics = parse_excel_metrics(kte.getvalue())
-        opp_metrics = parse_excel_metrics(opp.getvalue())
+            st.write(sheet)
 
-        rows = []
-        all_keys = sorted(set(list(kte_metrics.keys()) + list(opp_metrics.keys())))
-        for k in all_keys:
-            rows.append({
-                "metric": k,
-                "kte": kte_metrics.get(k, 0),
-                "opp": opp_metrics.get(k, 0),
-                "same": kte_metrics.get(k, 0) == opp_metrics.get(k, 0)
-            })
-
-        st.dataframe(pd.DataFrame(rows), use_container_width=True)
+            st.dataframe(df.head())
