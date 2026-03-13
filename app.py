@@ -750,7 +750,6 @@ def render_radar_like_chart(result: BriefingResult):
 
 
 st.title("Taktikai meccs-briefing generátor v1")
-
 st.sidebar.caption("D/P = Direkt / Presszing")
 
 step = st.sidebar.radio("Lépés", ["1. Input", "2. Elemzés", "3. Edzői nézet", "4. Exportálás"], index=0)
@@ -870,10 +869,8 @@ elif step == "2. Elemzés":
         with c1:
             st.markdown("### 7 dimenzió")
             st.dataframe(dimension_rows(result), use_container_width=True)
-
             st.markdown("### 7 dimenzió – oszlopdiagram")
             render_dimensions_bar(result)
-
             st.markdown("### 7 dimenzió – pókhálódiagram")
             render_radar_like_chart(result)
 
