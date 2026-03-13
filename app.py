@@ -255,7 +255,7 @@ def render_strategy_map(selected_a: Optional[str] = None, selected_b: Optional[s
 
 
 # =========================================================
-# METRIC ALIASES
+# MATCH METRIC ALIASES
 # =========================================================
 
 METRIC_ALIASES = {
@@ -309,7 +309,24 @@ METRIC_ALIASES = {
 
 
 # =========================================================
-# PARSER
+# PLAYER COLUMN ALIASES
+# =========================================================
+
+PLAYER_COL_ALIASES = {
+    "player": ["player"],
+    "position": ["position"],
+    "minutes_played": ["minutes played"],
+    "passes": ["passes"],
+    "progressive_passes": ["progressive passes"],
+    "key_passes": ["key passes"],
+    "interceptions": ["interceptions"],
+    "defensive_challenges": ["defensive challenges"],
+    "def_challenges_won_pct": ["defensive challenges won, %", "defensive challenges won %"],
+}
+
+
+# =========================================================
+# MATCH PARSER
 # =========================================================
 
 def find_total_row_index(df: pd.DataFrame) -> Optional[int]:
@@ -334,7 +351,6 @@ def build_header_map(df: pd.DataFrame) -> Dict[int, str]:
     headers = {}
     if df.shape[0] == 0:
         return headers
-
     for c in range(df.shape[1]):
         headers[c] = normalize_text(df.iat[0, c])
     return headers
@@ -439,13 +455,116 @@ def parse_excel_metrics_with_debug(file_bytes: bytes) -> Tuple[Dict[str, float],
     return metrics, all_debug_rows, sheet_debug, match_count
 
 
-def parse_excel_metrics(file_bytes: bytes) -> Dict[str, float]:
-    metrics, _, _, _ = parse_excel_metrics_with_debug(file_bytes)
-    return metrics
+# =========================================================
+# PLAYER PARSER
+# =========================================================
+
+def rename_player_columns(df: pd.DataFrame) -> pd.DataFrame:
+    col_map = {}
+    lowered = {str(c).lower(): c for c in df.columns}
+
+    for target, aliases in PLAYER_COL_ALIASES.items():
+        found = None
+        for col in df.columns:
+            col_norm = normalize_text(col)
+            if any(alias in col_norm for alias in aliases):
+                found = col
+                break
+        if found is not None:
+            col_map[found] = target
+
+    return df.rename(columns=col_map)
+
+
+@st.cache_data(show_spinner=False)
+def parse_player_excel(file_bytes: bytes) -> Dict[str, pd.DataFrame]:
+    df = pd.read_excel(file_bytes)
+    df = rename_player_columns(df)
+
+    required = ["player", "minutes_played"]
+    for req in required:
+        if req not in df.columns:
+            return {
+                "creators": pd.DataFrame(),
+                "progressors": pd.DataFrame(),
+                "build_up": pd.DataFrame(),
+                "defenders": pd.DataFrame(),
+                "duel_players": pd.DataFrame(),
+            }
+
+    df["minutes_played"] = pd.to_numeric(df["minutes_played"], errors="coerce").fillna(0)
+    df = df[df["minutes_played"] >= 300].copy()
+
+    for col in [
+        "passes",
+        "progressive_passes",
+        "key_passes",
+        "interceptions",
+        "defensive_challenges",
+    ]:
+        if col in df.columns:
+            df[col] = (
+                df[col]
+                .astype(str)
+                .str.replace(",", ".", regex=False)
+                .replace("-", pd.NA)
+            )
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+
+    if "passes" not in df.columns:
+        df["passes"] = 0.0
+    if "progressive_passes" not in df.columns:
+        df["progressive_passes"] = 0.0
+    if "key_passes" not in df.columns:
+        df["key_passes"] = 0.0
+    if "interceptions" not in df.columns:
+        df["interceptions"] = 0.0
+    if "defensive_challenges" not in df.columns:
+        df["defensive_challenges"] = 0.0
+    if "position" not in df.columns:
+        df["position"] = ""
+
+    creators = (
+        df.sort_values("key_passes", ascending=False)[["player", "position", "key_passes"]]
+        .head(3)
+        .reset_index(drop=True)
+    )
+
+    progressors = (
+        df.sort_values("progressive_passes", ascending=False)[["player", "position", "progressive_passes"]]
+        .head(3)
+        .reset_index(drop=True)
+    )
+
+    build_up = (
+        df.sort_values("passes", ascending=False)[["player", "position", "passes"]]
+        .head(3)
+        .reset_index(drop=True)
+    )
+
+    defenders = (
+        df.sort_values("interceptions", ascending=False)[["player", "position", "interceptions"]]
+        .head(3)
+        .reset_index(drop=True)
+    )
+
+    duel_players = (
+        df.sort_values("defensive_challenges", ascending=False)[["player", "position", "defensive_challenges"]]
+        .head(3)
+        .reset_index(drop=True)
+    )
+
+    return {
+        "creators": creators,
+        "progressors": progressors,
+        "build_up": build_up,
+        "defenders": defenders,
+        "duel_players": duel_players,
+    }
 
 
 # =========================================================
-# SCORING
+# SCORING / ENGINE
 # =========================================================
 
 def score_dimensions(metrics: Dict[str, float], matches: int) -> Dict[str, float]:
@@ -481,32 +600,12 @@ def score_dimensions(metrics: Dict[str, float], matches: int) -> Dict[str, float
 
 def distinct_metric_count(team_metrics: Dict[str, float], opp_metrics: Dict[str, float]) -> int:
     keys = sorted(set(team_metrics.keys()) | set(opp_metrics.keys()))
-    count = 0
-    for k in keys:
-        if team_metrics.get(k, 0) != opp_metrics.get(k, 0):
-            count += 1
-    return count
+    return sum(1 for k in keys if team_metrics.get(k, 0) != opp_metrics.get(k, 0))
 
 
-def dimension_rows(dims: Dict[str, Dict[str, float]]) -> List[dict]:
-    return [
-        {
-            "Dimenzió": dim,
-            "KTE": float(vals["KTE"]),
-            "ELL": float(vals["ELL"]),
-            "Edge": float(vals["Edge"]),
-        }
-        for dim, vals in dims.items()
-    ]
-
-
-# =========================================================
-# ENGINE
-# =========================================================
-
-def run_engine(team_file, opp_file):
-    team_metrics, team_debug_rows, team_sheet_debug, team_matches = parse_excel_metrics_with_debug(team_file.getvalue())
-    opp_metrics, opp_debug_rows, opp_sheet_debug, opp_matches = parse_excel_metrics_with_debug(opp_file.getvalue())
+def run_engine(team_match_file, opp_match_file, team_player_file=None, opp_player_file=None):
+    team_metrics, team_debug_rows, team_sheet_debug, team_matches = parse_excel_metrics_with_debug(team_match_file.getvalue())
+    opp_metrics, opp_debug_rows, opp_sheet_debug, opp_matches = parse_excel_metrics_with_debug(opp_match_file.getvalue())
 
     team_scores = score_dimensions(team_metrics, team_matches)
     opp_scores = score_dimensions(opp_metrics, opp_matches)
@@ -530,6 +629,25 @@ def run_engine(team_file, opp_file):
     else:
         suggested_a, suggested_b, suggested_split = "PRS", "MLT", 55
 
+    team_players = parse_player_excel(team_player_file.getvalue()) if team_player_file else None
+    opp_players = parse_player_excel(opp_player_file.getvalue()) if opp_player_file else None
+
+    warnings = []
+    if opp_players is not None and not opp_players["creators"].empty:
+        row = opp_players["creators"].iloc[0]
+        warnings.append(f"{row['player']} – fő kreatív játékos, félterület-védekezés prioritás.")
+    if opp_players is not None and not opp_players["progressors"].empty:
+        row = opp_players["progressors"].iloc[0]
+        warnings.append(f"{row['player']} – fő progresszor, pressing trigger jelölt.")
+    if opp_players is not None and not opp_players["duel_players"].empty:
+        row = opp_players["duel_players"].iloc[0]
+        warnings.append(f"{row['player']} – párharcerős profil, második labdákra figyelni.")
+    if not warnings:
+        warnings = [
+            "A fő progressziós csatornákat korán zárni.",
+            "A második labdák kontrollja kulcskérdés.",
+        ]
+
     return (
         dims,
         team_metrics,
@@ -543,6 +661,9 @@ def run_engine(team_file, opp_file):
         suggested_a,
         suggested_b,
         suggested_split,
+        team_players,
+        opp_players,
+        warnings,
     )
 
 
@@ -658,30 +779,27 @@ def render_radar_svg(dims: Dict[str, Dict[str, float]]):
 # APP STATE
 # =========================================================
 
-if "dims" not in st.session_state:
-    st.session_state["dims"] = None
-if "team_metrics" not in st.session_state:
-    st.session_state["team_metrics"] = None
-if "opp_metrics" not in st.session_state:
-    st.session_state["opp_metrics"] = None
-if "team_debug_rows" not in st.session_state:
-    st.session_state["team_debug_rows"] = None
-if "opp_debug_rows" not in st.session_state:
-    st.session_state["opp_debug_rows"] = None
-if "team_sheet_debug" not in st.session_state:
-    st.session_state["team_sheet_debug"] = None
-if "opp_sheet_debug" not in st.session_state:
-    st.session_state["opp_sheet_debug"] = None
-if "team_matches" not in st.session_state:
-    st.session_state["team_matches"] = None
-if "opp_matches" not in st.session_state:
-    st.session_state["opp_matches"] = None
-if "selected_plan_a" not in st.session_state:
-    st.session_state["selected_plan_a"] = "GAT"
-if "selected_plan_b" not in st.session_state:
-    st.session_state["selected_plan_b"] = "BAT"
-if "selected_split" not in st.session_state:
-    st.session_state["selected_split"] = 60
+defaults = {
+    "dims": None,
+    "team_metrics": None,
+    "opp_metrics": None,
+    "team_debug_rows": None,
+    "opp_debug_rows": None,
+    "team_sheet_debug": None,
+    "opp_sheet_debug": None,
+    "team_matches": None,
+    "opp_matches": None,
+    "selected_plan_a": "GAT",
+    "selected_plan_b": "BAT",
+    "selected_split": 60,
+    "team_players": None,
+    "opp_players": None,
+    "warnings": None,
+}
+
+for k, v in defaults.items():
+    if k not in st.session_state:
+        st.session_state[k] = v
 
 
 # =========================================================
@@ -705,10 +823,17 @@ step = st.sidebar.radio(
 if step == "1. Input":
     st.header("Excel feltöltés")
 
-    kte = st.file_uploader("KTE Excel", type=["xlsx"], key="kte_input")
-    opp = st.file_uploader("Opponent Excel", type=["xlsx"], key="opp_input")
+    c1, c2 = st.columns(2)
 
-    if kte and opp:
+    with c1:
+        kte_match = st.file_uploader("KTE Match Excel", type=["xlsx"], key="kte_match")
+        kte_player = st.file_uploader("KTE Player Excel", type=["xlsx"], key="kte_player")
+
+    with c2:
+        opp_match = st.file_uploader("Opponent Match Excel", type=["xlsx"], key="opp_match")
+        opp_player = st.file_uploader("Opponent Player Excel", type=["xlsx"], key="opp_player")
+
+    if kte_match and opp_match:
         (
             dims,
             team_metrics,
@@ -722,7 +847,10 @@ if step == "1. Input":
             suggested_a,
             suggested_b,
             suggested_split,
-        ) = run_engine(kte, opp)
+            team_players,
+            opp_players,
+            warnings,
+        ) = run_engine(kte_match, opp_match, kte_player, opp_player)
 
         st.session_state["dims"] = dims
         st.session_state["team_metrics"] = team_metrics
@@ -736,15 +864,18 @@ if step == "1. Input":
         st.session_state["selected_plan_a"] = suggested_a
         st.session_state["selected_plan_b"] = suggested_b
         st.session_state["selected_split"] = suggested_split
+        st.session_state["team_players"] = team_players
+        st.session_state["opp_players"] = opp_players
+        st.session_state["warnings"] = warnings
 
         st.success("Adatok feldolgozva.")
 
-        c1, c2 = st.columns(2)
-        with c1:
+        a1, a2 = st.columns(2)
+        with a1:
             st.subheader("KTE – nyers metrikák")
             st.json(team_metrics)
             st.write("Meccsszám:", team_matches)
-        with c2:
+        with a2:
             st.subheader("ELL – nyers metrikák")
             st.json(opp_metrics)
             st.write("Meccsszám:", opp_matches)
@@ -766,6 +897,8 @@ if step == "2. Review":
     opp_metrics = st.session_state.get("opp_metrics")
     team_matches = st.session_state.get("team_matches")
     opp_matches = st.session_state.get("opp_matches")
+    opp_players = st.session_state.get("opp_players")
+    warnings = st.session_state.get("warnings")
 
     if not dims:
         st.warning("Előbb tölts fel adatot az Input fülön.")
@@ -825,6 +958,29 @@ if step == "2. Review":
         with c2:
             st.subheader("Dimenziók")
             render_bar_chart(dims)
+
+        st.subheader("Opponent key players")
+        if opp_players is not None:
+            k1, k2 = st.columns(2)
+            with k1:
+                st.write("CREATORS")
+                st.dataframe(opp_players["creators"], use_container_width=True)
+                st.write("PROGRESSORS")
+                st.dataframe(opp_players["progressors"], use_container_width=True)
+                st.write("BUILD UP")
+                st.dataframe(opp_players["build_up"], use_container_width=True)
+            with k2:
+                st.write("DEFENDERS")
+                st.dataframe(opp_players["defenders"], use_container_width=True)
+                st.write("DUEL PLAYERS")
+                st.dataframe(opp_players["duel_players"], use_container_width=True)
+        else:
+            st.info("Nincs opponent player Excel feltöltve.")
+
+        st.subheader("Tactical warnings")
+        if warnings:
+            for w in warnings:
+                st.write(f"- {w}")
 
         st.subheader("Skálázási háttér")
         scaling_rows = [
@@ -890,13 +1046,10 @@ if step == "2. Review":
             )
 
         with briefing_right:
+            warning_text = "\n".join([f"- {w}" for w in warnings]) if warnings else ""
             st.text_area(
-                "3 kulcs",
-                value="\n".join([
-                    "1. Átmenetek sebességének kihasználása",
-                    "2. Labdakihozatal stabilizálása nyomás alatt",
-                    "3. Pontrúgások és második labdák kontrollja",
-                ]),
+                "3 kulcs / Warnings",
+                value=warning_text,
                 height=100,
             )
             st.text_area(
@@ -917,20 +1070,22 @@ if step == "2. Review":
 if step == "3. Debug":
     st.header("Debug")
 
-    kte = st.file_uploader("KTE Excel", type=["xlsx"], key="kte_debug")
-    opp = st.file_uploader("Opponent Excel", type=["xlsx"], key="opp_debug")
+    kte_match = st.file_uploader("KTE Match Excel", type=["xlsx"], key="kte_debug_match")
+    opp_match = st.file_uploader("Opponent Match Excel", type=["xlsx"], key="opp_debug_match")
+    kte_player = st.file_uploader("KTE Player Excel", type=["xlsx"], key="kte_debug_player")
+    opp_player = st.file_uploader("Opponent Player Excel", type=["xlsx"], key="opp_debug_player")
 
-    if kte:
-        team_metrics, team_debug_rows, team_sheet_debug, team_matches = parse_excel_metrics_with_debug(kte.getvalue())
+    if kte_match:
+        team_metrics, team_debug_rows, team_sheet_debug, team_matches = parse_excel_metrics_with_debug(kte_match.getvalue())
 
-        st.subheader("KTE parser találatok")
+        st.subheader("KTE match parser találatok")
         st.json(team_metrics)
         st.write("KTE meccsszám:", team_matches)
 
         st.subheader("KTE metrika → oszlop illesztés")
         st.dataframe(pd.DataFrame(team_debug_rows), use_container_width=True)
 
-        st.subheader("KTE sheet debug")
+        st.subheader("KTE match sheet debug")
         for item in team_sheet_debug:
             st.markdown(f"### KTE sheet: {item['sheet_name']}")
             st.dataframe(item["preview"], use_container_width=True)
@@ -943,17 +1098,17 @@ if step == "3. Debug":
             st.markdown("**Total sor értékei:**")
             st.write(item["total_row_values"])
 
-    if opp:
-        opp_metrics, opp_debug_rows, opp_sheet_debug, opp_matches = parse_excel_metrics_with_debug(opp.getvalue())
+    if opp_match:
+        opp_metrics, opp_debug_rows, opp_sheet_debug, opp_matches = parse_excel_metrics_with_debug(opp_match.getvalue())
 
-        st.subheader("Opponent parser találatok")
+        st.subheader("Opponent match parser találatok")
         st.json(opp_metrics)
         st.write("ELL meccsszám:", opp_matches)
 
         st.subheader("Opponent metrika → oszlop illesztés")
         st.dataframe(pd.DataFrame(opp_debug_rows), use_container_width=True)
 
-        st.subheader("Opponent sheet debug")
+        st.subheader("Opponent match sheet debug")
         for item in opp_sheet_debug:
             st.markdown(f"### Opponent sheet: {item['sheet_name']}")
             st.dataframe(item["preview"], use_container_width=True)
@@ -966,11 +1121,11 @@ if step == "3. Debug":
             st.markdown("**Total sor értékei:**")
             st.write(item["total_row_values"])
 
-    if kte and opp:
+    if kte_match and opp_match:
         st.subheader("KTE vs Opponent – nyers metrika összehasonlítás")
 
-        team_metrics, team_debug_rows, _, team_matches = parse_excel_metrics_with_debug(kte.getvalue())
-        opp_metrics, opp_debug_rows, _, opp_matches = parse_excel_metrics_with_debug(opp.getvalue())
+        team_metrics, team_debug_rows, _, team_matches = parse_excel_metrics_with_debug(kte_match.getvalue())
+        opp_metrics, opp_debug_rows, _, opp_matches = parse_excel_metrics_with_debug(opp_match.getvalue())
 
         compare_rows = []
         all_keys = sorted(set(list(team_metrics.keys()) + list(opp_metrics.keys())))
@@ -993,30 +1148,16 @@ if step == "3. Debug":
 
         st.dataframe(pd.DataFrame(compare_rows), use_container_width=True)
 
-        st.subheader("Per meccs skálázott mutatók")
-        per_match_rows = [
-            {
-                "metric": "entries_box_per_match",
-                "kte": round(team_metrics.get("entries_box", 0) / max(team_matches, 1), 2),
-                "opp": round(opp_metrics.get("entries_box", 0) / max(opp_matches, 1), 2),
-            },
-            {
-                "metric": "shots_per_match",
-                "kte": round(team_metrics.get("shots", 0) / max(team_matches, 1), 2),
-                "opp": round(opp_metrics.get("shots", 0) / max(opp_matches, 1), 2),
-            },
-            {
-                "metric": "key_passes_per_match",
-                "kte": round(team_metrics.get("key_passes", 0) / max(team_matches, 1), 2),
-                "opp": round(opp_metrics.get("key_passes", 0) / max(opp_matches, 1), 2),
-            },
-            {
-                "metric": "corners_per_match",
-                "kte": round(team_metrics.get("corners", 0) / max(team_matches, 1), 2),
-                "opp": round(opp_metrics.get("corners", 0) / max(opp_matches, 1), 2),
-            },
-        ]
-        st.dataframe(pd.DataFrame(per_match_rows), use_container_width=True)
+    if kte_player:
+        st.subheader("KTE player parser")
+        kte_players = parse_player_excel(kte_player.getvalue())
+        for key, df in kte_players.items():
+            st.write(key.upper())
+            st.dataframe(df, use_container_width=True)
 
-        diff_count = distinct_metric_count(team_metrics, opp_metrics)
-        st.write("Eltérő metrikák száma:", diff_count)
+    if opp_player:
+        st.subheader("Opponent player parser")
+        opp_players = parse_player_excel(opp_player.getvalue())
+        for key, df in opp_players.items():
+            st.write(key.upper())
+            st.dataframe(df, use_container_width=True)
