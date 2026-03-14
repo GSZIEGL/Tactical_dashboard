@@ -102,6 +102,28 @@ def ensure_pdf_font() -> str:
     return PDF_FONT_NAME
 
 
+def pdf_safe_text(text) -> str:
+    """Normalize text for PDF output and preserve Hungarian characters when a Unicode font is available."""
+    ensure_pdf_font()
+    s = "" if text is None else str(text)
+    s = unicodedata.normalize("NFC", s)
+    replacements = {
+        " ": " ",
+        "‐": "-",
+        "‑": "-",
+        "‒": "-",
+        "–": "-",
+        "—": "-",
+        "―": "-",
+        "−": "-",
+        "…": "...",
+        "​": "",
+    }
+    for src, dst in replacements.items():
+        s = s.replace(src, dst)
+    return s
+
+
 # =========================================================
 # UTIL
 # =========================================================
@@ -1842,7 +1864,7 @@ def build_html_export(package: Dict[str, object]) -> str:
 
     return f"""<html><head><meta charset='utf-8'><title>Taktikai döntéselőkészítő</title>
     <style>
-    body {{ font-family: DejaVu Sans, Arial, sans-serif; background:linear-gradient(180deg,#F3ECFB 0%, #F8F5FC 100%); color:#24173A; margin:0; padding:24px; }}
+    body {{ font-family: DejaVu Sans, Arial, sans-serif; background:#FFFFFF; color:#24173A; margin:0; padding:24px; }}
     .page {{ background:white; border-radius:20px; padding:26px; margin-bottom:22px; box-shadow:0 14px 34px rgba(55,31,91,.10); page-break-after: always; border:1px solid #E7DDF2; }}
     .page:last-child {{ page-break-after:auto; }}
     .grid2 {{ display:grid; grid-template-columns:1fr 1fr; gap:18px; }}
@@ -2763,14 +2785,14 @@ for k, v in defaults.items():
 
 st.markdown("""
 <style>
-.stApp { background: linear-gradient(180deg, #F3ECFB 0%, #FBF8FE 100%); }
-.kte-hero { display:flex; align-items:center; gap:14px; background:linear-gradient(135deg,#5B2C83 0%, #7B52A2 100%); color:white; padding:16px 18px; border-radius:18px; margin-bottom:14px; box-shadow:0 12px 28px rgba(91,44,131,.22); }
-.kte-badge { width:52px; height:52px; border-radius:50%; background:white; color:#5B2C83; display:flex; align-items:center; justify-content:center; font-weight:800; }
+.stApp { background: #FFFFFF; }
+.kte-hero { display:flex; align-items:center; gap:14px; background:#FFFFFF; color:#2F1D4A; padding:16px 18px; border-radius:18px; margin-bottom:14px; border:1px solid #E8E2F0; box-shadow:0 8px 20px rgba(47,29,74,.06); }
+.kte-badge { width:52px; height:52px; border-radius:50%; background:#5B2C83; color:#FFFFFF; display:flex; align-items:center; justify-content:center; font-weight:800; }
 .block-container { padding-top: 1.2rem; }
-[data-testid="stSidebar"] { background:#F7F2FB; }
+[data-testid="stSidebar"] { background:#FFFFFF; border-right:1px solid #E8E2F0; }
 </style>
 """, unsafe_allow_html=True)
-st.markdown("""<div class='kte-hero'><div class='kte-badge'>KTE</div><div><div style='font-size:1.55rem;font-weight:800;'>Taktikai döntéselőkészítő ⚽</div><div style='opacity:.92;'>Adatalapú briefing • 7 dimenzió • 9 stratégia</div></div></div>""", unsafe_allow_html=True)
+st.markdown("""<div class='kte-hero'><div class='kte-badge'>KTE</div><div><div style='font-size:1.55rem;font-weight:800;'>Taktikai döntéselőkészítő ⚽</div><div style='opacity:.85;color:#5F4A7C;'>Adatalapú briefing • 7 dimenzió • 9 stratégia</div></div></div>""", unsafe_allow_html=True)
 st.sidebar.caption("D/P = Direkt / Presszing")
 
 step = st.sidebar.radio(
