@@ -12,6 +12,14 @@ import pdfplumber
 import streamlit as st
 import streamlit.components.v1 as components
 
+MATPLOTLIB_AVAILABLE = True
+try:
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+except Exception:
+    MATPLOTLIB_AVAILABLE = False
+
 REPORTLAB_AVAILABLE = True
 SVGLIB_AVAILABLE = True
 CAIROSVG_AVAILABLE = True
@@ -40,25 +48,35 @@ except Exception:
 st.set_page_config(page_title="Tactical Briefing Engine", layout="wide")
 
 PDF_FONT_NAME = "Helvetica"
+PDF_FONT_BOLD_NAME = "Helvetica-Bold"
 
 def ensure_pdf_font() -> str:
-    global PDF_FONT_NAME
+    global PDF_FONT_NAME, PDF_FONT_BOLD_NAME
     if not REPORTLAB_AVAILABLE:
         return PDF_FONT_NAME
     if PDF_FONT_NAME != "Helvetica":
         return PDF_FONT_NAME
-    candidates = [
+    regular_candidates = [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/dejavu/DejaVuSans.ttf",
     ]
-    for candidate in candidates:
-        if Path(candidate).exists():
-            try:
-                pdfmetrics.registerFont(TTFont("DejaVuSans", candidate))
-                PDF_FONT_NAME = "DejaVuSans"
-                return PDF_FONT_NAME
-            except Exception:
-                pass
+    bold_candidates = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
+    ]
+    regular = next((c for c in regular_candidates if Path(c).exists()), None)
+    bold = next((c for c in bold_candidates if Path(c).exists()), None)
+    try:
+        if regular:
+            pdfmetrics.registerFont(TTFont("DejaVuSans", regular))
+            PDF_FONT_NAME = "DejaVuSans"
+        if bold:
+            pdfmetrics.registerFont(TTFont("DejaVuSans-Bold", bold))
+            PDF_FONT_BOLD_NAME = "DejaVuSans-Bold"
+        elif regular:
+            PDF_FONT_BOLD_NAME = PDF_FONT_NAME
+    except Exception:
+        pass
     return PDF_FONT_NAME
 
 
@@ -139,6 +157,67 @@ def unique_keep_order(items: List[str]) -> List[str]:
     return out
 
 
+
+
+def label_strategy(code: str) -> str:
+    return f"{code} – {STRATEGY_PALETTE.get(code, {}).get('name', code)}" if code else "-"
+
+
+def label_scenario(value: str) -> str:
+    return {"conservative": "konzervatív", "balanced": "kiegyensúlyozott", "aggressive": "agresszív"}.get(value, value or "-")
+
+
+def label_focus_area(value: str) -> str:
+    return {
+        "pressing": "letámadás",
+        "build-up": "labdakihozatal",
+        "transition": "átmenetek",
+        "set pieces": "pontrúgások",
+        "rest defense": "rest defense",
+    }.get(value, value or "-")
+
+
+def format_focus_areas(items: List[str]) -> str:
+    if not items:
+        return "nincs külön fókusz"
+    return ", ".join(label_focus_area(x) for x in items)
+
+
+def baseline_coach_controls(selected_plan_a: str, selected_plan_b: str, selected_split: int) -> Dict[str, object]:
+    linked = linked_controls_from_model(selected_plan_a)
+    return {
+        "primary_model": selected_plan_a,
+        "secondary_model": selected_plan_b,
+        "focus_areas": linked.get("focus_areas", []),
+        "pressing_zone": "közép",
+        "build_up_solution": linked.get("build_up_solution", "vegyes"),
+        "defensive_block": linked.get("defensive_block", "közepes"),
+        "match_scenario": linked.get("match_scenario", "balanced"),
+        "plan_a_emphasis": int(selected_split),
+        "set_piece_priority": "mindkettő",
+        "second_ball_focus": False,
+        "halfspace_defense_priority": False,
+        "selected_risks": [],
+    }
+
+
+def has_meaningful_coach_intervention(controls: Dict[str, object], baseline: Dict[str, object]) -> bool:
+    keys = [
+        "primary_model", "secondary_model", "pressing_zone", "build_up_solution",
+        "defensive_block", "match_scenario", "plan_a_emphasis", "set_piece_priority",
+        "second_ball_focus", "halfspace_defense_priority", "selected_risks", "focus_areas",
+    ]
+    for key in keys:
+        a = controls.get(key)
+        b = baseline.get(key)
+        if isinstance(a, list) or isinstance(b, list):
+            if sorted(list(a or [])) != sorted(list(b or [])):
+                return True
+        else:
+            if a != b:
+                return True
+    return False
+
 def df_to_records(df: Optional[pd.DataFrame]) -> List[dict]:
     if df is None or df.empty:
         return []
@@ -200,7 +279,7 @@ def strategy_scatter_data(selected_a: Optional[str] = None, selected_b: Optional
         "aggressive": 6,
     }
     style_label = {1: "Direkt", 2: "D/P", 3: "Vegyes", 4: "Kiegy.", 5: "Kontroll", 6: "Agresszív"}
-    block_label = {1: "Mély", 2: "Low-mid", 3: "Közép", 4: "Mid-high", 5: "Magas"}
+    block_label = {1: "Mély", 2: "Alacsony-közép", 3: "Közép", 4: "Közép-magas", 5: "Magas"}
 
     rows = []
     for code, data in STRATEGY_PALETTE.items():
@@ -289,7 +368,7 @@ def render_strategy_map(selected_a: Optional[str] = None, selected_b: Optional[s
                         "axis": {
                             "title": "Blokkmagasság: Mély → Magas",
                             "values": [1, 2, 3, 4, 5],
-                            "labelExpr": "datum.value == 1 ? 'Mély' : datum.value == 2 ? 'Low-mid' : datum.value == 3 ? 'Közép' : datum.value == 4 ? 'Mid-high' : 'Magas'",
+                            "labelExpr": "datum.value == 1 ? 'Mély' : datum.value == 2 ? 'Alacsony-közép' : datum.value == 3 ? 'Közép' : datum.value == 4 ? 'Közép-magas' : 'Magas'",
                             "grid": True,
                         },
                     },
@@ -849,6 +928,9 @@ def get_current_coach_controls() -> Dict[str, object]:
         "set_piece_priority": st.session_state.get("coach_set_piece_priority", "mindkettő"),
         "second_ball_focus": st.session_state.get("coach_second_ball_focus", False),
         "halfspace_defense_priority": st.session_state.get("coach_halfspace_defense_priority", False),
+        "suggested_plan_a": st.session_state.get("selected_plan_a", "GAT"),
+        "suggested_plan_b": st.session_state.get("selected_plan_b", "BAT"),
+        "suggested_split": st.session_state.get("selected_split", 60),
     }
 
 
@@ -1289,39 +1371,46 @@ def build_decision_support(base_dims, adjusted_dims, controls, team_metrics, opp
             unique_keep_order(special_dims),
         )
 
-    top_changes = [f"{x['dim']} {x['delta']:+.1f}" for x in changes[:3]] or ["nincs jelentős dimenzióeltolás"]
-    player_focus = controls.get("focus_players", []) or []
-
-    executive = (
-        f"A jelenlegi coach-beállítás az alap matchup-képhez képest leginkább ezeket a területeket módosítja: {', '.join(top_changes)}. "
-        f"Ez a gyakorlatban azt jelenti, hogy a választott game plan a {controls.get('primary_model', '-')} alaplogikára épül, "
-        f"mellé {controls.get('secondary_model', '-')} tartalék irányt tart meg, "
-        f"és a terv súlypontja {controls.get('plan_a_emphasis', 60)}/{100-int(controls.get('plan_a_emphasis', 60))} arányban a Plan A felé húz. "
-        f"Vagyis nem fix jóslatot látsz, hanem azt, hogy az eredeti adatalapú profilhoz képest mely taktikai hangsúlyok erősödnek vagy gyengülnek."
+    top_changes = [f"{x['dim']} ({x['delta']:+.1f})" for x in changes[:3]]
+    baseline = baseline_coach_controls(
+        controls.get("suggested_plan_a", controls.get("primary_model", "KIE")),
+        controls.get("suggested_plan_b", controls.get("secondary_model", "BAT")),
+        int(controls.get("suggested_split", controls.get("plan_a_emphasis", 60))),
     )
+    has_manual = has_meaningful_coach_intervention(controls, baseline)
+
+    if has_manual:
+        executive = (
+            f"Az edzői finomhangolás az alap adatalapú matchup-képhez képest leginkább a következő dimenziókat mozdítja el: {', '.join(top_changes) or 'nincs számottevő eltolás'}. "
+            f"Ez a gyakorlatban azt jelenti, hogy a terv a(z) {label_strategy(controls.get('primary_model', '-'))} irányába tolódik, "
+            f"miközben tartalék opcióként a(z) {label_strategy(controls.get('secondary_model', '-'))} megmarad. "
+            f"A súlypont {controls.get('plan_a_emphasis', 60)}/{100-int(controls.get('plan_a_emphasis', 60))} arányban az A terv felé húz, tehát itt nem új jóslat készül, "
+            f"hanem az látszik, hogy az alap modellhez képest mely taktikai hangsúlyok erősödnek és melyek gyengülnek."
+        )
+    else:
+        executive = ""
 
     recommendation = []
     if controls.get("defensive_block") == "magas" and opp_pass < 72:
-        recommendation.append("A magasabb blokk adatalapon is védhetőbbnek tűnik, mert az ellenfél passzbiztonsága nem kiemelkedő.")
+        recommendation.append("A magasabb blokk adatalapon is vállalhatóbb, mert az ellenfél passzbiztonsága nem kiemelkedő.")
     elif controls.get("defensive_block") == "magas":
-        recommendation.append("A magas blokk csak szakaszosan ajánlott; az ellenfél passzjátéka miatt célszerű triggerhez kötni.")
+        recommendation.append("A magas blokk inkább szakaszosan ajánlott; az ellenfél passzjátéka miatt érdemes triggerhez kötni.")
     if build_up == "direkt" and opp_entries_pm >= 15:
-        recommendation.append("A direkt build-up mellett a rest defense-et külön biztosítani kell, mert az ellenfél visszatámadásból is veszélyes lehet.")
+        recommendation.append("Direkt labdakihozatal mellett a rest defense-et külön biztosítani kell, mert az ellenfél visszatámadásból is veszélyes lehet.")
     if build_up == "rövid" and team_press < 50:
-        recommendation.append("Rövid build-up esetén fontos az első labdavesztés utáni azonnali reakció, mert a saját presszinghatékonyság nem kiemelkedő.")
+        recommendation.append("Rövid labdakihozatalnál fontos az első labdavesztés utáni azonnali reakció, mert a saját letámadási hatékonyság nem kiemelkedő.")
     if controls.get("second_ball_focus"):
-        recommendation.append("A second ball fókusz jól illeszkedik ehhez a matchuphoz, ha a direkt szakaszok száma nőni fog.")
-    if controls.get("focus_players"):
-        recommendation.append(f"Kulcsjátékos fókusz: {', '.join(player_focus[:3])} – a game plan kommunikációja ezekre a matchupokra fűzhető fel.")
-    if not recommendation:
-        recommendation.append("A jelenlegi beállítás stabil, közepes varianciájú meccstervet ad; a fő döntési pont a blokk és a build-up váltási triggerje marad.")
+        recommendation.append("A második labda fókusz jól illeszkedik ehhez a matchuphoz, ha nő a direkt szakaszok száma.")
+    if not recommendation and has_manual:
+        recommendation.append("Az edzői finomhangolás egy stabil, közepes varianciájú meccstervet ad; a fő döntési pont a blokk és a labdakihozatal váltási triggerje marad.")
 
     return {
         "executive_summary": executive,
-        "top_dimension_changes": top_changes,
+        "top_dimension_changes": top_changes if has_manual else [],
         "matchup_notes": unique_keep_order(matchup_notes)[:3],
-        "recommendation": unique_keep_order(recommendation)[:4],
-        "cards": cards,
+        "recommendation": unique_keep_order(recommendation)[:4] if has_manual else [],
+        "cards": cards if has_manual else [],
+        "has_manual_intervention": has_manual,
     }
 
 
@@ -1329,7 +1418,7 @@ def render_methodology_block():
     with st.expander("Metodika / hogyan dolgozik az app", expanded=False):
         st.markdown(
             """
-Ez az alkalmazás **adatalapú taktikai döntéselőkészítő**, amely a match Excel, player Excel és célzott PDF-scouting inputokból épít **egységes matchup-képet**. A rendszer a két csapatot **7 taktikai dimenzió mentén** skálázza: **letámadás, labdakihozatal, átmenetek, támadó játék, pontrúgások, labdabirtoklás, lövésprofil**. Ezekből illeszti a meccset a **9 alapstratégia** egyikéhez vagy kombinációjához: **KON, GAT, BAT, KIE, PRS, MLT, DOM, POZ, LAB**. A javaslat nem egyetlen mutatóból készül, hanem a pressing, build-up, területnyerés, helyzetkialakítás, pontrúgás és meccsdinamika együttes matchup-olvasatából, ezért a briefing mögött konkrét adatstruktúra áll. A döntési logikában van **MI-alapú strukturálás és szabályozott következtetési réteg**, de ugyanúgy beépül a saját szakmai munkád is: a coach-panelen te finomítod a game plant, a rendszer pedig végig következetesen újrasúlyozza a döntési képet.
+Ez az alkalmazás **adatalapú taktikai döntéselőkészítő**, amely a match Excel, player Excel és célzott PDF-scouting inputokból épít egységes **matchup-profilt**. A modell a két csapatot **7 taktikai dimenzióban** méri: **letámadás** (labdaszerzés magassága és nyomás), **labdakihozatal** (első két fázis stabilitása), **átmenetek** (gyors helyzetváltás), **támadó játék** (helyzetkialakítás és boxelérés), **pontrúgások**, **labdabirtoklás** és **lövésprofil**. Ezt a képet illeszti rá a **9 alapstratégiára**: **KON** kontra mély blokkból, **GAT** gyors átmenet, **BAT** középső blokk + átmenet, **KIE** kiegyensúlyozott játék, **PRS** presszing + átmenet, **MLT** magas letámadás, **DOM** dominancia, **POZ** pozíciós támadás, **LAB** mélyebb labdatartás. A javaslat tehát nem tipp, hanem több adatforrásból épített matchup-vizsgálat, amelyben **MI-alapú strukturálás** és a saját szakmai finomhangolásod egyszerre jelenik meg. Az edzői beavatkozás után a rendszer végig következetesen újrasúlyozza a képet, így az export már a módosított döntési logikát mutatja.
             """
         )
 
@@ -1338,9 +1427,9 @@ def get_methodology_summary() -> str:
     return (
         "Ez az alkalmazás adatalapú taktikai döntéselőkészítő: a match Excel, player Excel és célzott PDF-scouting inputok alapján épít matchup-profilt. "
         "A két csapatot 7 taktikai dimenzió mentén értékeli — letámadás, labdakihozatal, átmenetek, támadó játék, pontrúgások, labdabirtoklás, lövésprofil — majd ezeket a 9 alapstratégia egyikéhez vagy kombinációjához illeszti. "
+        "A 9 stratégia jelentése röviden: KON kontra mély blokkból, GAT gyors átmenet, BAT középső blokk + átmenet, KIE kiegyensúlyozott, PRS presszing + átmenet, MLT magas letámadás, DOM dominancia, POZ pozíciós támadás, LAB mélyebb labdatartás. "
         "A Plan A / Plan B logika ezért nem megérzésre, hanem összevethető mutatókra és matchup-vizsgálatra épül. "
-        "A rendszerben MI-alapú strukturálás és szabályozott következtetési réteg is dolgozik, miközben a coach-felületen a saját szakmai finomhangolásod is megjelenik. "
-        "Így a végtermék egyszerre egzakt, értelmezhető és exportálható briefingként használható."
+        "A rendszerben MI-alapú strukturálás és szabályozott következtetési réteg is dolgozik, miközben a coach-felületen a saját szakmai finomhangolásod is megjelenik."
     )
 
 
@@ -1397,15 +1486,15 @@ def build_full_conclusion(package: Dict[str, object]) -> List[str]:
         bullets.append("A 7 dimenziós profil legfontosabb olvasata: " + "; ".join(edge_texts) + ".")
     if coach.get("build_up_solution") or coach.get("defensive_block"):
         bullets.append(
-            f"Ajánlott játékkeret: {coach.get('build_up_solution', 'n.a.')} build-up, {coach.get('defensive_block', 'n.a.')} blokk, {coach.get('match_scenario', 'n.a.')} meccsdinamika."
+            f"Ajánlott játékkeret: {coach.get('build_up_solution', 'n.a.')} labdakihozatal, {coach.get('defensive_block', 'n.a.')} blokk, {label_scenario(coach.get('match_scenario', 'n.a.'))} meccsdinamika."
         )
     danger = summarize_danger_players(p3.get("key_player_threats", {}))
     if danger:
         bullets.append("Legveszélyesebb ellenfél-faktorok: " + "; ".join([x.split(' – ')[0] for x in danger[:3]]) + ".")
-    if ds.get("executive_summary"):
+    if ds.get("has_manual_intervention") and ds.get("executive_summary"):
         bullets.append(str(ds.get("executive_summary")))
     recs = ds.get("recommendation", [])
-    if recs:
+    if ds.get("has_manual_intervention") and recs:
         bullets.append("Vezetői döntési fókusz: " + "; ".join(recs[:2]) + ".")
     if p1.get("conclusion"):
         bullets.append(str(p1["conclusion"]))
@@ -1490,6 +1579,117 @@ def build_reportlab_chart_flowable(svg_string: str, max_width_pts: float, max_he
     return None
 
 
+def png_bytes_to_base64_img_tag(png: Optional[bytes], alt_text: str, width_style: str = "100%") -> str:
+    if png:
+        b64 = base64.b64encode(png).decode("ascii")
+        return f"<img src='data:image/png;base64,{b64}' alt='{alt_text}' style='width:{width_style}; border-radius:12px;' />"
+    return f"<div>{alt_text}</div>"
+
+
+def fig_to_png_bytes(fig) -> Optional[bytes]:
+    try:
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", dpi=170, bbox_inches="tight", facecolor=fig.get_facecolor())
+        plt.close(fig)
+        return buf.getvalue()
+    except Exception:
+        try:
+            plt.close(fig)
+        except Exception:
+            pass
+        return None
+
+
+def get_radar_png_bytes(dims: Dict[str, Dict[str, float]]) -> Optional[bytes]:
+    if not MATPLOTLIB_AVAILABLE:
+        return svg_to_png_bytes(get_radar_svg(dims), 1800)
+    labels = list(dims.keys())
+    kte = [dims[k]["KTE"] for k in labels]
+    ell = [dims[k]["ELL"] for k in labels]
+    angles = [n / float(len(labels)) * 2 * math.pi for n in range(len(labels))]
+    angles += angles[:1]
+    kte += kte[:1]
+    ell += ell[:1]
+    fig = plt.figure(figsize=(8.4, 6.4), facecolor="#FBF8FE")
+    ax = plt.subplot(111, polar=True)
+    ax.set_facecolor("white")
+    ax.set_theta_offset(math.pi / 2)
+    ax.set_theta_direction(-1)
+    ax.set_xticks(angles[:-1])
+    ax.set_xticklabels(labels, fontsize=10)
+    ax.set_rlabel_position(0)
+    ax.set_yticks([2, 4, 6, 8, 10])
+    ax.set_yticklabels(["2", "4", "6", "8", "10"], fontsize=8)
+    ax.set_ylim(0, 10)
+    ax.plot(angles, kte, linewidth=2.5, color="#5B2C83")
+    ax.fill(angles, kte, color="#5B2C83", alpha=0.18)
+    ax.plot(angles, ell, linewidth=2.0, color="#9D8ABA", linestyle="--")
+    ax.fill(angles, ell, color="#B7A3C9", alpha=0.18)
+    ax.legend(["KTE", "ELL"], loc="upper right", bbox_to_anchor=(1.18, 1.12), frameon=False)
+    fig.suptitle("7 dimenziós radar", fontsize=15, fontweight="bold", color="#2F1D4A")
+    fig.tight_layout()
+    return fig_to_png_bytes(fig)
+
+
+def get_bar_chart_png_bytes(dims: Dict[str, Dict[str, float]]) -> Optional[bytes]:
+    if not MATPLOTLIB_AVAILABLE:
+        return svg_to_png_bytes(get_bar_chart_svg(dims), 1800)
+    labels = list(dims.keys())
+    kte = [dims[k]["KTE"] for k in labels]
+    ell = [dims[k]["ELL"] for k in labels]
+    x = list(range(len(labels)))
+    fig, ax = plt.subplots(figsize=(10.2, 4.6), facecolor="#FBF8FE")
+    ax.set_facecolor("white")
+    w = 0.36
+    ax.bar([i - w/2 for i in x], kte, width=w, label="KTE", color="#5B2C83")
+    ax.bar([i + w/2 for i in x], ell, width=w, label="ELL", color="#B7A3C9", edgecolor="#5B2C83")
+    ax.set_ylim(0, 10)
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, rotation=20, ha="right", fontsize=9)
+    ax.grid(axis="y", alpha=0.25)
+    ax.legend(frameon=False)
+    ax.set_title("Dimenzió-összehasonlítás", fontsize=15, fontweight="bold", color="#2F1D4A")
+    fig.tight_layout()
+    return fig_to_png_bytes(fig)
+
+
+def get_strategy_map_png_bytes(selected_a: Optional[str] = None, selected_b: Optional[str] = None) -> Optional[bytes]:
+    if not MATPLOTLIB_AVAILABLE:
+        return svg_to_png_bytes(get_strategy_map_svg(selected_a, selected_b), 1800)
+    rows = strategy_scatter_data(selected_a, selected_b)
+    fig, ax = plt.subplots(figsize=(9.2, 4.8), facecolor="#FBF8FE")
+    ax.set_facecolor("white")
+    color_map = {"Paletta": "#5B2C83", "Plan A": "#E0A500", "Plan B": "#2AA7A1"}
+    for row in rows:
+        ax.scatter(row["x"], row["y"], s=140, color=color_map.get(row["marker_type"], "#5B2C83"))
+        ax.text(row["x"], row["y"] + 0.10, row["code"], ha="center", va="bottom", fontsize=9, fontweight="bold")
+    ax.set_xlim(0.5, 6.5)
+    ax.set_ylim(0.5, 5.5)
+    ax.set_xticks([1, 2, 3, 4, 5, 6])
+    ax.set_xticklabels(["Direkt", "D/P", "Vegyes", "Kiegy.", "Kontroll", "Agresszív"], fontsize=9)
+    ax.set_yticks([1, 2, 3, 4, 5])
+    ax.set_yticklabels(["Mély", "Alacsony-közép", "Közép", "Közép-magas", "Magas"], fontsize=9)
+    ax.grid(alpha=0.25)
+    ax.set_title("Stratégiai térkép", fontsize=15, fontweight="bold", color="#2F1D4A")
+    fig.tight_layout()
+    return fig_to_png_bytes(fig)
+
+
+def build_reportlab_png_flowable(png_bytes: Optional[bytes], max_width_pts: float, max_height_pts: Optional[float] = None):
+    if not png_bytes or not REPORTLAB_AVAILABLE:
+        return None
+    try:
+        img = Image(io.BytesIO(png_bytes))
+        width = getattr(img, "drawWidth", max_width_pts) or max_width_pts
+        height = getattr(img, "drawHeight", max_height_pts or max_width_pts * 0.6) or (max_height_pts or max_width_pts * 0.6)
+        scale = min(max_width_pts / width, (max_height_pts / height) if max_height_pts else 1.0)
+        img.drawWidth = width * scale
+        img.drawHeight = height * scale
+        return img
+    except Exception:
+        return None
+
+
 def get_bar_chart_svg(dims: Dict[str, Dict[str, float]]) -> str:
     labels = list(dims.keys())
     width = 980
@@ -1567,7 +1767,7 @@ def get_strategy_map_svg(selected_a: Optional[str] = None, selected_b: Optional[
     x_labels = ["Direkt", "D/P", "Vegyes", "Kiegy.", "Kontroll", "Agresszív"]
     for i, lab in enumerate(x_labels, start=1):
         svg.append(f'<text x="{px_x(i):.1f}" y="{top + plot_h + 28}" font-size="12" text-anchor="middle" fill="#2F1D4A">{lab}</text>')
-    y_labels = {1: "Mély", 2: "Low-mid", 3: "Közép", 4: "Mid-high", 5: "Magas"}
+    y_labels = {1: "Mély", 2: "Alacsony-közép", 3: "Közép", 4: "Közép-magas", 5: "Magas"}
     for i, lab in y_labels.items():
         svg.append(f'<text x="{left - 12}" y="{px_y(i) + 4:.1f}" font-size="12" text-anchor="end" fill="#2F1D4A">{lab}</text>')
 
@@ -1597,12 +1797,9 @@ def build_html_export(package: Dict[str, object]) -> str:
     coach = package.get("coach_controls", {}) or {}
     danger = summarize_danger_players(p3.get("key_player_threats", {}))
     dims = p1["dimensions"]
-    radar_svg = get_radar_svg(dims)
-    bar_svg = get_bar_chart_svg(dims)
-    map_svg = get_strategy_map_svg(p1["plan_a"], p1["plan_b"])
-    radar_img = svg_to_base64_img_tag(radar_svg, '7 dimenziós radar')
-    bar_img = svg_to_base64_img_tag(bar_svg, 'Dimenzió összehasonlítás')
-    map_img = svg_to_base64_img_tag(map_svg, 'Stratégiai térkép')
+    radar_img = png_bytes_to_base64_img_tag(get_radar_png_bytes(dims), "7 dimenziós radar")
+    bar_img = png_bytes_to_base64_img_tag(get_bar_chart_png_bytes(dims), "Dimenzió-összehasonlítás")
+    map_img = png_bytes_to_base64_img_tag(get_strategy_map_png_bytes(p1["plan_a"], p1["plan_b"]), "Stratégiai térkép")
     final_summary = build_full_conclusion(package)
 
     def bullets(items):
@@ -1613,33 +1810,43 @@ def build_html_export(package: Dict[str, object]) -> str:
         for dim, vals in dims.items()
     )
 
-    return f"""<html><head><meta charset='utf-8'><title>Tactical Briefing</title>
+    decision_block = ''
+    if ds.get("has_manual_intervention"):
+        decision_block = f"<div class='card'><h3>Edzői finomhangolás hatása</h3><p>{ds.get('executive_summary', '')}</p><ul>{bullets(ds.get('recommendation', []))}</ul></div>"
+
+    return f"""<html><head><meta charset='utf-8'><title>Taktikai döntéselőkészítő</title>
     <style>
-    body {{ font-family: Arial, sans-serif; background:#F4F1F8; color:#1E1630; margin:0; padding:24px; }}
-    .page {{ background:white; border-radius:18px; padding:24px; margin-bottom:20px; box-shadow:0 10px 30px rgba(43,25,72,.08); page-break-after: always; }}
-    .page:last-child {{ page-break-after: auto; }}
+    body {{ font-family: DejaVu Sans, Arial, sans-serif; background:linear-gradient(180deg,#F3ECFB 0%, #F8F5FC 100%); color:#24173A; margin:0; padding:24px; }}
+    .page {{ background:white; border-radius:20px; padding:26px; margin-bottom:22px; box-shadow:0 14px 34px rgba(55,31,91,.10); page-break-after: always; border:1px solid #E7DDF2; }}
+    .page:last-child {{ page-break-after:auto; }}
     .grid2 {{ display:grid; grid-template-columns:1fr 1fr; gap:18px; }}
     .grid3 {{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:18px; }}
-    .card {{ background:#F8F5FC; border:1px solid #E1D8EE; border-radius:14px; padding:16px; }}
-    h1,h2,h3 {{ margin:0 0 12px 0; }}
+    .card {{ background:#FBF8FE; border:1px solid #E1D8EE; border-radius:14px; padding:16px; }}
+    h1,h2,h3 {{ margin:0 0 12px 0; color:#2F1D4A; }}
     table {{ width:100%; border-collapse:collapse; font-size:13px; }}
     th,td {{ border:1px solid #E1D8EE; padding:8px; text-align:left; }}
     th {{ background:#EEE8F5; }}
     ul {{ margin:8px 0 0 18px; }}
     .hero {{ display:flex; justify-content:space-between; gap:18px; align-items:flex-start; }}
+    .brand {{ display:flex; align-items:center; gap:14px; margin-bottom:12px; }}
+    .badge {{ width:54px; height:54px; border-radius:50%; background:#5B2C83; color:white; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:18px; box-shadow:0 8px 20px rgba(91,44,131,.25); }}
+    .pill {{ display:inline-block; background:#EEE8F5; color:#4A2B71; padding:5px 10px; border-radius:999px; font-size:12px; margin-right:6px; }}
+    .small {{ color:#6C5A88; font-size:12px; }}
     </style></head><body>
     <div class='page'>
+      <div class='brand'><div class='badge'>KTE</div><div><h1>Taktikai döntéselőkészítő ⚽</h1><div class='small'>Adatalapú briefing • 7 dimenzió • 9 stratégia</div></div></div>
       <div class='hero'>
         <div>
-          <h1>Tactical Briefing Export</h1>
+          <div style='margin-bottom:10px'><span class='pill'>7 dimenzió</span><span class='pill'>9 stratégia</span><span class='pill'>MI + szakmai modell</span></div>
           <p>{get_methodology_summary()}</p>
         </div>
         <div class='card'>
-          <strong>Plan A:</strong> {p1['plan_a']}<br>
-          <strong>Plan B:</strong> {p1['plan_b']}<br>
+          <strong>A terv:</strong> {label_strategy(p1['plan_a'])}<br>
+          <strong>B terv:</strong> {label_strategy(p1['plan_b'])}<br>
           <strong>Arány:</strong> {p1['plan_split']}<br>
-          <strong>Build-up:</strong> {coach.get('build_up_solution', 'n.a.')}<br>
-          <strong>Blokk:</strong> {coach.get('defensive_block', 'n.a.')}
+          <strong>Labdakihozatal:</strong> {coach.get('build_up_solution', 'n.a.')}<br>
+          <strong>Blokk:</strong> {coach.get('defensive_block', 'n.a.')}<br>
+          <strong>Forgatókönyv:</strong> {label_scenario(coach.get('match_scenario', ''))}
         </div>
       </div>
       <div class='card' style='margin-top:18px'>
@@ -1648,21 +1855,21 @@ def build_html_export(package: Dict[str, object]) -> str:
       </div>
     </div>
 
-    <div class='page'><h2>7 dimenziós radar</h2><div class='card'>{radar_img}</div></div>
-    <div class='page'><h2>Dimenzió összehasonlítás</h2><div class='card'>{bar_img}</div></div>
-    <div class='page'><h2>Stratégiai térkép</h2><div class='card'>{map_img}</div></div>
+    <div class='page'><div class='brand'><div class='badge'>KTE</div><h2>7 dimenziós radar</h2></div><div class='card'>{radar_img}</div></div>
+    <div class='page'><div class='brand'><div class='badge'>KTE</div><h2>Dimenzió-összehasonlítás</h2></div><div class='card'>{bar_img}</div></div>
+    <div class='page'><div class='brand'><div class='badge'>KTE</div><h2>Stratégiai térkép</h2></div><div class='card'>{map_img}</div></div>
 
     <div class='page'>
-      <h2>7 dimenziós összehasonlítás</h2>
-      <table><thead><tr><th>Dimenzió</th><th>KTE</th><th>ELL</th><th>Edge</th></tr></thead><tbody>{dim_rows}</tbody></table>
+      <div class='brand'><div class='badge'>KTE</div><h2>7 dimenziós összehasonlítás</h2></div>
+      <table><thead><tr><th>Dimenzió</th><th>KTE</th><th>Ellenfél</th><th>Különbség</th></tr></thead><tbody>{dim_rows}</tbody></table>
     </div>
 
     <div class='page'>
       <div class='grid2'>
         <div class='card'><h3>Ellenfél profil</h3><p>{p1['opponent_profile']}</p></div>
         <div class='card'><h3>Saját állapot</h3><p>{p1['own_state']}</p></div>
-        <div class='card'><h3>Opponent DNA</h3><p>{p3['opponent_dna']}</p></div>
-        <div class='card'><h3>Konklúzió</h3><p>{p1['conclusion']}</p></div>
+        <div class='card'><h3>Ellenfél-DNS</h3><p>{p3['opponent_dna']}</p></div>
+        <div class='card'><h3>Rövid konklúzió</h3><p>{p1['conclusion']}</p></div>
       </div>
     </div>
 
@@ -1677,7 +1884,7 @@ def build_html_export(package: Dict[str, object]) -> str:
     <div class='page'>
       <div class='grid2'>
         <div class='card'><h3>Legveszélyesebb ellenfél-játékosok</h3><ul>{bullets(danger)}</ul></div>
-        <div class='card'><h3>Taktikai döntési blokk</h3><p>{ds.get('executive_summary', '')}</p><ul>{bullets(ds.get('recommendation', []))}</ul></div>
+        {decision_block}
       </div>
     </div>
     </body></html>"""
@@ -1704,27 +1911,29 @@ def build_pdf_export_bytes(package: Dict[str, object]) -> bytes:
     body.spaceAfter = 6
     for style in [title_style, heading, body]:
         style.fontName = pdf_font_name
+    title_style.textColor = colors.HexColor("#2F1D4A")
+    heading.textColor = colors.HexColor("#2F1D4A")
 
     story = []
     p1 = package["page_1_onepager"]
     p3 = package["page_3_tactical_overview"]
 
-    story.append(Paragraph("Tactical Briefing Export", title_style))
+    story.append(Paragraph("Taktikai döntéselőkészítő export", title_style))
     story.append(Spacer(1, 4))
     story.append(Paragraph(get_methodology_summary(), body))
     story.append(Spacer(1, 8))
 
     meta = [
-        ["Plan A", str(p1["plan_a"])],
-        ["Plan B", str(p1["plan_b"])],
+        ["A terv", label_strategy(str(p1["plan_a"]))],
+        ["B terv", label_strategy(str(p1["plan_b"]))],
         ["Arány", str(p1["plan_split"])],
-        ["Coach fókusz", ", ".join(package.get("coach_controls", {}).get("focus_areas", [])) or "n.a."],
+        ["Fókusz", format_focus_areas(package.get("coach_controls", {}).get("focus_areas", []))],
     ]
     tbl = Table(meta, colWidths=[35 * mm, 140 * mm])
     tbl.setStyle(TableStyle([
         ("GRID", (0, 0), (-1, -1), 0.4, colors.lightgrey),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
+        ("FONTNAME", (0, 0), (-1, -1), pdf_font_name),
     ]))
     story.append(tbl)
     story.append(Spacer(1, 10))
@@ -1736,13 +1945,13 @@ def build_pdf_export_bytes(package: Dict[str, object]) -> bytes:
 
     max_w = doc.width
     charts = [
-        ("7 dimenziós radar", get_radar_svg(p1["dimensions"]), 240 * mm),
-        ("Dimenzió összehasonlítás", get_bar_chart_svg(p1["dimensions"]), 120 * mm),
-        ("Stratégiai térkép", get_strategy_map_svg(p1["plan_a"], p1["plan_b"]), 130 * mm),
+        ("7 dimenziós radar", get_radar_png_bytes(p1["dimensions"]), 170 * mm),
+        ("Dimenzió-összehasonlítás", get_bar_chart_png_bytes(p1["dimensions"]), 110 * mm),
+        ("Stratégiai térkép", get_strategy_map_png_bytes(p1["plan_a"], p1["plan_b"]), 120 * mm),
     ]
-    for idx, (title, svg, max_h) in enumerate(charts):
+    for idx, (title, png_bytes, max_h) in enumerate(charts):
         story.append(Paragraph(title, heading))
-        flowable = build_reportlab_chart_flowable(svg, max_w, max_h)
+        flowable = build_reportlab_png_flowable(png_bytes, max_w, max_h)
         if flowable is not None:
             story.append(flowable)
         else:
@@ -1760,8 +1969,8 @@ def build_pdf_export_bytes(package: Dict[str, object]) -> bytes:
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EEE8F5")),
         ("GRID", (0, 0), (-1, -1), 0.4, colors.lightgrey),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
+        ("FONTNAME", (0, 0), (-1, 0), PDF_FONT_BOLD_NAME),
+        ("FONTNAME", (0, 1), (-1, -1), pdf_font_name),
         ("FONTSIZE", (0, 0), (-1, -1), 9),
     ]))
     story.append(dt)
@@ -1770,7 +1979,7 @@ def build_pdf_export_bytes(package: Dict[str, object]) -> bytes:
     for title, value in [
         ("Ellenfél profil", p1["opponent_profile"]),
         ("Saját állapot", p1["own_state"]),
-        ("Opponent DNA", p3["opponent_dna"]),
+        ("Ellenfél-DNS", p3["opponent_dna"]),
         ("Konklúzió", p1["conclusion"]),
     ]:
         story.append(Paragraph(title, heading))
@@ -1801,9 +2010,9 @@ def build_pdf_export_bytes(package: Dict[str, object]) -> bytes:
         story.append(Paragraph("- nincs kiemelt veszélyforrás azonosítva", body))
 
     ds = package.get("decision_support", {}) or {}
-    if ds:
+    if ds.get("has_manual_intervention"):
         story.append(Spacer(1, 4))
-        story.append(Paragraph("Taktikai döntési blokk", heading))
+        story.append(Paragraph("Edzői finomhangolás hatása", heading))
         if ds.get("executive_summary"):
             story.append(Paragraph(str(ds.get("executive_summary")), body))
         for item in ds.get("recommendation", [])[:4]:
@@ -1867,7 +2076,7 @@ def build_markdown_export(package: Dict[str, object]) -> str:
     p3 = package["page_3_tactical_overview"]
 
     md = []
-    md.append("# Tactical Briefing Export")
+    md.append("# Taktikai döntéselőkészítő export")
     md.append("")
     md.append("## 1. oldal – Onepager")
     md.append(f"- Plan A: {p1['plan_a']}")
@@ -1896,22 +2105,22 @@ def build_markdown_export(package: Dict[str, object]) -> str:
     for x in build_full_conclusion(package):
         md.append(f"- {x}")
     md.append("")
-    md.append("### Coach controlok")
+    md.append("### Edzői beállítások")
     for k, v in package.get("coach_controls", {}).items():
         md.append(f"- {k}: {v}")
     md.append("")
     ds = package.get("decision_support", {})
     if ds:
-        md.append("### Taktikai döntési hatás")
+        md.append("### Edzői finomhangolás hatása")
         md.append(ds.get("executive_summary", ""))
         for x in ds.get("matchup_notes", []):
             md.append(f"- Matchup: {x}")
         for x in ds.get("recommendation", []):
             md.append(f"- Javaslat: {x}")
         md.append("")
-    md.append("## 3. oldal – Tactical overview")
+    md.append("## 3. oldal – Taktikai áttekintés")
     md.append("")
-    md.append("### Opponent DNA")
+    md.append("### Ellenfél-DNS")
     md.append(p3["opponent_dna"])
     md.append("")
     md.append("### Várható meccsdinamika")
@@ -1984,7 +2193,7 @@ def render_export_preview(package: Dict[str, object]):
     with c1:
         st.markdown("### Ellenfél profil")
         st.info(p1["opponent_profile"])
-        st.markdown("### Opponent DNA")
+        st.markdown("### Ellenfél-DNS")
         st.code(p3["opponent_dna"])
     with c2:
         st.markdown("### Saját állapot")
@@ -2293,7 +2502,16 @@ for k, v in defaults.items():
 # UI
 # =========================================================
 
-st.title("Tactical Briefing Engine")
+st.markdown("""
+<style>
+.stApp { background: linear-gradient(180deg, #F3ECFB 0%, #FBF8FE 100%); }
+.kte-hero { display:flex; align-items:center; gap:14px; background:linear-gradient(135deg,#5B2C83 0%, #7B52A2 100%); color:white; padding:16px 18px; border-radius:18px; margin-bottom:14px; box-shadow:0 12px 28px rgba(91,44,131,.22); }
+.kte-badge { width:52px; height:52px; border-radius:50%; background:white; color:#5B2C83; display:flex; align-items:center; justify-content:center; font-weight:800; }
+.block-container { padding-top: 1.2rem; }
+[data-testid="stSidebar"] { background:#F7F2FB; }
+</style>
+""", unsafe_allow_html=True)
+st.markdown("""<div class='kte-hero'><div class='kte-badge'>KTE</div><div><div style='font-size:1.55rem;font-weight:800;'>Taktikai döntéselőkészítő ⚽</div><div style='opacity:.92;'>Adatalapú briefing • 7 dimenzió • 9 stratégia</div></div></div>""", unsafe_allow_html=True)
 st.sidebar.caption("D/P = Direkt / Presszing")
 
 step = st.sidebar.radio(
@@ -2633,31 +2851,34 @@ if step == "2. Review":
         decision_support = st.session_state.get("decision_support") or {}
         if decision_support:
             st.subheader("Taktikai döntési hatásmotor")
-            st.info(decision_support.get("executive_summary", ""))
+            if decision_support.get("has_manual_intervention"):
+                st.info(decision_support.get("executive_summary", ""))
 
-            ds1, ds2 = st.columns(2)
-            with ds1:
-                st.markdown("**Matchup-olvasat**")
-                for line in decision_support.get("matchup_notes", []):
-                    st.write(f"- {line}")
-            with ds2:
-                st.markdown("**Vezetői javaslatok**")
-                for line in decision_support.get("recommendation", []):
-                    st.write(f"- {line}")
+                ds1, ds2 = st.columns(2)
+                with ds1:
+                    st.markdown("**Matchup-olvasat**")
+                    for line in decision_support.get("matchup_notes", []):
+                        st.write(f"- {line}")
+                with ds2:
+                    st.markdown("**Vezetői javaslatok**")
+                    for line in decision_support.get("recommendation", []):
+                        st.write(f"- {line}")
 
-            for card in decision_support.get("cards", []):
-                with st.expander(f"{card['title']} – {card['choice']}", expanded=False):
-                    cga, cgb = st.columns(2)
-                    with cga:
-                        st.markdown("**Várható nyereség**")
-                        for line in card.get("gains", []):
-                            st.write(f"- {line}")
-                    with cgb:
-                        st.markdown("**Trade-off / ár**")
-                        for line in card.get("costs", []):
-                            st.write(f"- {line}")
-                    st.markdown(f"**Matchup-fit:** {card.get('fit', '-')}")
-                    st.markdown(f"**Érintett dimenziók:** {', '.join(card.get('dims', [])) or '-'}")
+                for card in decision_support.get("cards", []):
+                    with st.expander(f"{card['title']} – {card['choice']}", expanded=False):
+                        cga, cgb = st.columns(2)
+                        with cga:
+                            st.markdown("**Várható nyereség**")
+                            for line in card.get("gains", []):
+                                st.write(f"- {line}")
+                        with cgb:
+                            st.markdown("**Trade-off / ár**")
+                            for line in card.get("costs", []):
+                                st.write(f"- {line}")
+                        st.markdown(f"**Matchup-fit:** {card.get('fit', '-')}")
+                        st.markdown(f"**Érintett dimenziók:** {', '.join(card.get('dims', [])) or '-'}")
+            else:
+                st.info("Nincs külön edzői finomhangolás rögzítve: jelenleg az alap adatalapú javaslat és matchup-kép érvényes.")
 
         st.subheader("Dimenzió tábla")
         st.dataframe(pd.DataFrame(active_dims).T, use_container_width=True)
