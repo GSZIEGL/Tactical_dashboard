@@ -1,3 +1,5 @@
+import io
+import json
 import math
 import re
 from typing import Dict, Optional, List, Tuple
@@ -7,6 +9,11 @@ import pandas as pd
 import pdfplumber
 import streamlit as st
 import streamlit.components.v1 as components
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import mm
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 
 st.set_page_config(page_title="Tactical Briefing Engine", layout="wide")
 
@@ -86,6 +93,12 @@ def unique_keep_order(items: List[str]) -> List[str]:
             out.append(key)
             seen.add(key)
     return out
+
+
+def df_to_records(df: Optional[pd.DataFrame]) -> List[dict]:
+    if df is None or df.empty:
+        return []
+    return df.to_dict(orient="records")
 
 
 # =========================================================
@@ -475,7 +488,7 @@ def parse_player_excel(file_bytes: bytes) -> Dict[str, pd.DataFrame]:
 # PDF PARSER - FINOMHANGOLT
 # =========================================================
 
-TARGET_PAGES = [1, 2, 3, 4, 6]  # 0-indexelve: 2,3,4,5,7 oldal
+TARGET_PAGES = [1, 2, 3, 4, 6]
 
 
 @st.cache_data(show_spinner=False)
@@ -527,7 +540,6 @@ def infer_formation(text: str) -> Optional[str]:
 
 
 def extract_player_names_from_pdf(text: str, limit: int = 6) -> List[str]:
-    # Nagyon egyszerű név-heurisztika: két nagybetűs szó egymás után
     names = re.findall(r"\b[A-ZÁÉÍÓÖŐÚÜŰ][a-záéíóöőúüű\-]+(?:\s+[A-ZÁÉÍÓÖŐÚÜŰ][a-záéíóöőúüű\-]+)+\b", text)
     return unique_keep_order(names)[:limit]
 
@@ -715,6 +727,365 @@ def build_opponent_dna_text(opp_pdf_insights, opp_metrics, opp_matches) -> str:
     ).strip()
 
 
+
+
+def parse_bullet_text(text: str) -> List[str]:
+    return [x.strip("-• ").strip() for x in str(text).splitlines() if x.strip()]
+
+
+def player_focus_options(opp_players: Optional[Dict[str, pd.DataFrame]]) -> List[str]:
+    opts = []
+    if not opp_players:
+        return opts
+    labels = {
+        "creators": "Creator",
+        "progressors": "Progressor",
+        "build_up": "Build-up",
+        "defenders": "Defender",
+        "duel_players": "Duel",
+    }
+    for group, prefix in labels.items():
+        df = opp_players.get(group)
+        if df is None or df.empty or "Player" not in df.columns:
+            continue
+        for _, row in df.head(3).iterrows():
+            player = str(row.get("Player", "")).strip()
+            if player:
+                opts.append(f"{player} ({prefix})")
+    return unique_keep_order(opts)
+
+
+def coach_risk_options(base_warnings: Optional[List[str]]) -> List[str]:
+    defaults = [
+        "pontrúgás-védekezés",
+        "half-space védekezés",
+        "second ball kontroll",
+        "átmeneti védekezés",
+        "magas presszing kijátszása",
+    ]
+    return unique_keep_order((base_warnings or []) + defaults)
+
+
+def build_coach_summary(controls: Dict[str, object]) -> Dict[str, str]:
+    focus_areas = controls.get("focus_areas", [])
+    selected_risks = controls.get("selected_risks", [])
+    focus_players = controls.get("focus_players", [])
+
+    opponent_profile = (
+        f"Elsődleges játékmodell: {controls.get('primary_model', '-')}"
+        f" | Alternatíva: {controls.get('secondary_model', '-')}"
+        f" | Meccskép fókusz: {', '.join(focus_areas) if focus_areas else 'nincs kijelölve'}"
+    )
+
+    own_state = (
+        f"Labdakihozatal: {controls.get('build_up_solution', '-')}"
+        f" | Védelmi blokk: {controls.get('defensive_block', '-')}"
+        f" | Presszing fókuszterület: {controls.get('pressing_zone', '-')}"
+        f" | Pontrúgás prioritás: {controls.get('set_piece_priority', '-')}"
+    )
+
+    keys = []
+    if focus_areas:
+        keys.append(f"Elsődleges fókusz: {', '.join(focus_areas[:3])}.")
+    keys.append(
+        f"Plan A hangsúly: {controls.get('plan_a_emphasis', 60)}%, "
+        f"forgatókönyv: {controls.get('match_scenario', '-')}.")
+    if focus_players:
+        keys.append(f"Kulcsjátékos-fókusz: {', '.join(focus_players[:3])}.")
+    if controls.get("second_ball_focus"):
+        keys.append("Second ball kontroll kiemelt feladat.")
+    if controls.get("halfspace_defense_priority"):
+        keys.append("Félterület-védekezés kiemelt prioritás.")
+    keys = unique_keep_order(keys)[:3]
+
+    risks = []
+    for r in selected_risks[:4]:
+        risks.append(r if str(r).endswith(".") else f"{r}.")
+    if not risks:
+        risks = ["Nincs külön coach által megjelölt extra kockázat."]
+
+    conclusion = (
+        f"Plan A: {controls.get('primary_model', '-')}; "
+        f"Plan B: {controls.get('secondary_model', '-')}; "
+        f"arány: {controls.get('plan_a_emphasis', 60)}/{100 - int(controls.get('plan_a_emphasis', 60))}. "
+        f"Fő meccsdinamika: {controls.get('match_scenario', '-')}. "
+        f"Labdakihozatal: {controls.get('build_up_solution', '-')}, blokk: {controls.get('defensive_block', '-')}. "
+        f"Pontrúgás: {controls.get('set_piece_priority', '-')}"
+    )
+
+    dynamics = [
+        f"Forgatókönyv: {controls.get('match_scenario', '-')}.",
+        f"Presszing fókuszterület: {controls.get('pressing_zone', '-')}.",
+        f"Labdakihozatal: {controls.get('build_up_solution', '-')}, védelmi blokk: {controls.get('defensive_block', '-')}.",
+    ]
+    if controls.get("second_ball_focus"):
+        dynamics.append("A meccs későbbi szakaszában nőhet a lecsorgók jelentősége.")
+    if controls.get("halfspace_defense_priority"):
+        dynamics.append("Half-space terhelésre célzott védekezési reakció szükséges.")
+
+    return {
+        "opponent_profile_text": opponent_profile,
+        "own_state_text": own_state,
+        "three_keys_text": "\n".join([f"- {x}" for x in keys]),
+        "risks_text": "\n".join([f"- {x}" for x in risks]),
+        "match_dynamics_text": "\n".join([f"- {x}" for x in unique_keep_order(dynamics)[:4]]),
+        "conclusion_text": conclusion,
+    }
+
+
+def sync_coach_texts_from_controls():
+    controls = {
+        "primary_model": st.session_state.get("coach_primary_model", st.session_state.get("selected_plan_a", "GAT")),
+        "secondary_model": st.session_state.get("coach_secondary_model", st.session_state.get("selected_plan_b", "BAT")),
+        "focus_areas": st.session_state.get("coach_focus_areas", []),
+        "selected_risks": st.session_state.get("coach_selected_risks", []),
+        "focus_players": st.session_state.get("coach_focus_players", []),
+        "pressing_zone": st.session_state.get("coach_pressing_zone", "közép"),
+        "build_up_solution": st.session_state.get("coach_build_up_solution", "vegyes"),
+        "defensive_block": st.session_state.get("coach_defensive_block", "közepes"),
+        "match_scenario": st.session_state.get("coach_match_scenario", "balanced"),
+        "plan_a_emphasis": st.session_state.get("coach_plan_a_emphasis", st.session_state.get("selected_split", 60)),
+        "set_piece_priority": st.session_state.get("coach_set_piece_priority", "mindkettő"),
+        "second_ball_focus": st.session_state.get("coach_second_ball_focus", False),
+        "halfspace_defense_priority": st.session_state.get("coach_halfspace_defense_priority", False),
+    }
+    summary = build_coach_summary(controls)
+    for k, v in summary.items():
+        st.session_state[k] = v
+    st.session_state["selected_plan_a"] = controls["primary_model"]
+    st.session_state["selected_plan_b"] = controls["secondary_model"]
+    st.session_state["selected_split"] = int(controls["plan_a_emphasis"])
+
+
+def render_methodology_block():
+    with st.expander("Metodika / hogyan dolgozik az app", expanded=False):
+        st.markdown(
+            """
+**Input források**
+- Match Excel: Main statistics sheet, oszlopalapú Total sor olvasás
+- Player Excel: top játékosprofilok percpadlóval és top 3 rangsorokkal
+- PDF: célzott oldalak (2,3,4,5,7), nem teljes dokumentum
+
+**7 dimenzió logika**
+- A total értékek ott, ahol kell, per meccs skálázódnak
+- A dimenziók 1-10 közé normalizált összehasonlító score-ok
+- A különbségek alapján készül a KTE vs ellenfél edge
+
+**Stratégiai javaslat**
+- Átmenet / kontroll / támadási edge alapján választ elsődleges Plan A-t
+- A Plan B mindig eltérő stratégiai kód
+- A coach felületen ez strukturáltan felülírható
+
+**Plan A / Plan B arány**
+- A slider a tervezett hangsúlyt mutatja
+- 60/40 = alapvetően Plan A, de előkészített Plan B váltás
+- 50/50 = közel kiegyensúlyozott, két forgatókönyves meccsterv
+
+**Coach input elv**
+- Nincs szabad szöveg
+- Csak checkbox / selectbox / multiselect / slider
+- Emiatt a briefing export-kompatibilis marad
+            """
+        )
+
+
+def build_pdf_export_bytes(package: Dict[str, object]) -> bytes:
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        leftMargin=12 * mm,
+        rightMargin=12 * mm,
+        topMargin=12 * mm,
+        bottomMargin=12 * mm,
+    )
+    styles = getSampleStyleSheet()
+    title_style = styles["Title"]
+    heading = styles["Heading2"]
+    body = styles["BodyText"]
+    body.spaceAfter = 6
+    small = ParagraphStyle("small", parent=body, fontSize=9, leading=12)
+
+    story = []
+    p1 = package["page_1_onepager"]
+    p3 = package["page_3_tactical_overview"]
+
+    story.append(Paragraph("Tactical Briefing Export", title_style))
+    story.append(Spacer(1, 6))
+
+    meta = [
+        ["Plan A", str(p1["plan_a"])],
+        ["Plan B", str(p1["plan_b"])],
+        ["Arány", str(p1["plan_split"])],
+        ["Coach fókusz", ", ".join(package.get("coach_controls", {}).get("focus_areas", [])) or "n.a."],
+    ]
+    tbl = Table(meta, colWidths=[35 * mm, 140 * mm])
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.whitesmoke),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.lightgrey),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
+    ]))
+    story.append(tbl)
+    story.append(Spacer(1, 10))
+
+    story.append(Paragraph("7 dimenziós összehasonlítás", heading))
+    dim_rows = [["Dimenzió", "KTE", "ELL", "Edge"]]
+    for dim, vals in p1["dimensions"].items():
+        dim_rows.append([dim, str(vals["KTE"]), str(vals["ELL"]), str(vals["Edge"])])
+    dt = Table(dim_rows, colWidths=[55 * mm, 20 * mm, 20 * mm, 20 * mm])
+    dt.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EEE8F5")),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.lightgrey),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+    ]))
+    story.append(dt)
+    story.append(Spacer(1, 10))
+
+    for title, value in [
+        ("Ellenfél profil", p1["opponent_profile"]),
+        ("Saját állapot", p1["own_state"]),
+        ("Opponent DNA", p3["opponent_dna"]),
+        ("Konklúzió", p1["conclusion"]),
+    ]:
+        story.append(Paragraph(title, heading))
+        story.append(Paragraph(str(value).replace("\n", "<br/>"), body))
+        story.append(Spacer(1, 4))
+
+    story.append(Paragraph("3 kulcs", heading))
+    for item in p1["three_keys"]:
+        story.append(Paragraph(f"• {item}", body))
+
+    story.append(Spacer(1, 4))
+    story.append(Paragraph("Kockázatok", heading))
+    for item in p1["risks"]:
+        story.append(Paragraph(f"• {item}", body))
+
+    story.append(Spacer(1, 4))
+    story.append(Paragraph("Várható meccsdinamika", heading))
+    for item in p3["match_dynamics"]:
+        story.append(Paragraph(f"• {item}", body))
+
+    story.append(Spacer(1, 4))
+    story.append(Paragraph("Kulcsjátékos fókusz", heading))
+    for item in package.get("coach_controls", {}).get("focus_players", []):
+        story.append(Paragraph(f"• {item}", body))
+    if not package.get("coach_controls", {}).get("focus_players", []):
+        story.append(Paragraph("• nincs külön kiválasztva", body))
+
+    story.append(Spacer(1, 4))
+    story.append(Paragraph("Opponent key players", heading))
+    for group_name, records in p3["key_player_threats"].items():
+        story.append(Paragraph(group_name, small))
+        if not records:
+            story.append(Paragraph("–", small))
+            continue
+        for r in records[:3]:
+            story.append(Paragraph(str(r), small))
+
+    doc.build(story)
+    pdf = buffer.getvalue()
+    buffer.close()
+    return pdf
+
+
+def build_export_package(
+    selected_plan_a: str,
+    selected_plan_b: str,
+    selected_split: int,
+    dims: Dict[str, Dict[str, float]],
+    opponent_profile_text: str,
+    own_state_text: str,
+    three_keys_text: str,
+    risks_text: str,
+    match_dynamics_text: str,
+    conclusion_text: str,
+    opponent_dna_text: str,
+    opp_players: Optional[Dict[str, pd.DataFrame]],
+    coach_controls: Optional[Dict[str, object]] = None,
+) -> Dict[str, object]:
+    package = {
+        "page_1_onepager": {
+            "plan_a": selected_plan_a,
+            "plan_b": selected_plan_b,
+            "plan_split": f"{selected_split}/{100 - selected_split}",
+            "dimensions": dims,
+            "opponent_profile": opponent_profile_text,
+            "own_state": own_state_text,
+            "three_keys": parse_bullet_text(three_keys_text),
+            "risks": parse_bullet_text(risks_text),
+            "conclusion": conclusion_text,
+        },
+        "page_3_tactical_overview": {
+            "opponent_dna": opponent_dna_text,
+            "match_dynamics": parse_bullet_text(match_dynamics_text),
+            "key_player_threats": {
+                "creators": df_to_records(opp_players["creators"]) if opp_players else [],
+                "progressors": df_to_records(opp_players["progressors"]) if opp_players else [],
+                "build_up": df_to_records(opp_players["build_up"]) if opp_players else [],
+                "defenders": df_to_records(opp_players["defenders"]) if opp_players else [],
+                "duel_players": df_to_records(opp_players["duel_players"]) if opp_players else [],
+            },
+        },
+        "coach_controls": coach_controls or {},
+    }
+    return package
+
+
+def build_markdown_export(package: Dict[str, object]) -> str:
+    p1 = package["page_1_onepager"]
+    p3 = package["page_3_tactical_overview"]
+
+    md = []
+    md.append("# Tactical Briefing Export")
+    md.append("")
+    md.append("## 1. oldal – Onepager")
+    md.append(f"- Plan A: {p1['plan_a']}")
+    md.append(f"- Plan B: {p1['plan_b']}")
+    md.append(f"- Arány: {p1['plan_split']}")
+    md.append("")
+    md.append("### Ellenfél profil")
+    md.append(p1["opponent_profile"])
+    md.append("")
+    md.append("### Saját állapot")
+    md.append(p1["own_state"])
+    md.append("")
+    md.append("### 3 kulcs")
+    for x in p1["three_keys"]:
+        md.append(f"- {x}")
+    md.append("")
+    md.append("### Kockázatok")
+    for x in p1["risks"]:
+        md.append(f"- {x}")
+    md.append("")
+    md.append("### Konklúzió")
+    md.append(p1["conclusion"])
+    md.append("")
+    md.append("### Coach controlok")
+    for k, v in package.get("coach_controls", {}).items():
+        md.append(f"- {k}: {v}")
+    md.append("")
+    md.append("## 3. oldal – Tactical overview")
+    md.append("")
+    md.append("### Opponent DNA")
+    md.append(p3["opponent_dna"])
+    md.append("")
+    md.append("### Várható meccsdinamika")
+    for x in p3["match_dynamics"]:
+        md.append(f"- {x}")
+    md.append("")
+    md.append("### Key player threats")
+    for group_name, records in p3["key_player_threats"].items():
+        md.append(f"#### {group_name}")
+        for r in records:
+            md.append(f"- {r}")
+        md.append("")
+    return "\n".join(md)
+
+
 def run_engine(
     team_match_file,
     opp_match_file,
@@ -813,15 +1184,33 @@ def render_bar_chart(dims: Dict[str, Dict[str, float]]):
     st.altair_chart(chart, use_container_width=True)
 
 
+
 def render_radar_svg(dims: Dict[str, Dict[str, float]]):
     labels = list(dims.keys())
     kte_vals = [dims[x]["KTE"] for x in labels]
     ell_vals = [dims[x]["ELL"] for x in labels]
 
-    size = 860
-    cx, cy = 315, 315
-    max_r = 190
+    width = 960
+    height = 760
+    cx, cy = 360, 330
+    max_r = 210
     n = len(labels)
+
+    def wrap_label(text: str, width_chars: int = 14) -> List[str]:
+        words = text.split()
+        lines = []
+        current = ""
+        for w in words:
+            candidate = f"{current} {w}".strip()
+            if len(candidate) <= width_chars:
+                current = candidate
+            else:
+                if current:
+                    lines.append(current)
+                current = w
+        if current:
+            lines.append(current)
+        return lines[:3]
 
     def polygon_points(values: List[float]):
         pts = []
@@ -833,9 +1222,7 @@ def render_radar_svg(dims: Dict[str, Dict[str, float]]):
             pts.append((x, y))
         return " ".join(f"{x:.1f},{y:.1f}" for x, y in pts), pts
 
-    grid_polys = []
-    axes = []
-    label_svg = []
+    grid_polys, axes, label_svg, level_labels = [], [], [], []
 
     for lvl in [2, 4, 6, 8, 10]:
         pts = []
@@ -847,6 +1234,7 @@ def render_radar_svg(dims: Dict[str, Dict[str, float]]):
             pts.append((x, y))
         pts_str = " ".join(f"{x:.1f},{y:.1f}" for x, y in pts)
         grid_polys.append(f'<polygon points="{pts_str}" fill="none" stroke="#D8D2E3" stroke-width="1" />')
+        level_labels.append(f'<text x="{cx + 8}" y="{cy - (lvl / 10.0) * max_r + 4:.1f}" font-size="11" fill="#8B7CA3">{lvl}</text>')
 
     for i, label in enumerate(labels):
         ang = -math.pi / 2 + (2 * math.pi * i / n)
@@ -854,48 +1242,57 @@ def render_radar_svg(dims: Dict[str, Dict[str, float]]):
         y2 = cy + math.sin(ang) * max_r
         axes.append(f'<line x1="{cx}" y1="{cy}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="#D8D2E3" stroke-width="1" />')
 
-        lx = cx + math.cos(ang) * (max_r + 70)
-        ly = cy + math.sin(ang) * (max_r + 70)
+        lx = cx + math.cos(ang) * (max_r + 85)
+        ly = cy + math.sin(ang) * (max_r + 85)
 
         anchor = "middle"
-        if lx < cx - 30:
+        if lx < cx - 40:
             anchor = "end"
-        elif lx > cx + 30:
+        elif lx > cx + 40:
             anchor = "start"
 
+        wrapped = wrap_label(label)
+        tspans = []
+        for j, part in enumerate(wrapped):
+            dy = 0 if j == 0 else 18
+            tspans.append(f'<tspan x="{lx:.1f}" dy="{dy}">{part}</tspan>')
         label_svg.append(
-            f'<text x="{lx:.1f}" y="{ly:.1f}" font-size="17" text-anchor="{anchor}" fill="#2F1D4A" font-weight="600">{label}</text>'
+            f'<text x="{lx:.1f}" y="{ly:.1f}" font-size="16" text-anchor="{anchor}" fill="#2F1D4A" font-weight="600">{"".join(tspans)}</text>'
         )
 
     kte_poly, kte_pts = polygon_points(kte_vals)
     ell_poly, ell_pts = polygon_points(ell_vals)
 
     kte_circles = "".join(
-        f'<circle cx="{x:.1f}" cy="{y:.1f}" r="5" fill="#5B2C83" stroke="white" stroke-width="1.3" />'
+        f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4.8" fill="#5B2C83" stroke="white" stroke-width="1.2" />'
         for x, y in kte_pts
     )
     ell_circles = "".join(
-        f'<circle cx="{x:.1f}" cy="{y:.1f}" r="5" fill="#B7A3C9" stroke="#5B2C83" stroke-width="1.0" />'
+        f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4.8" fill="#B7A3C9" stroke="#5B2C83" stroke-width="1.0" />'
         for x, y in ell_pts
     )
 
     svg = f"""
-    <svg width="{size}" height="{size}" viewBox="0 0 {size} {size}" xmlns="http://www.w3.org/2000/svg">
-      <rect width="100%" height="100%" fill="white" />
+    <svg width="100%" height="{height}" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg">
+      <rect width="100%" height="100%" rx="18" ry="18" fill="white" />
       {''.join(grid_polys)}
+      {''.join(level_labels)}
       {''.join(axes)}
-      <polygon points="{ell_poly}" fill="rgba(183,163,201,0.28)" stroke="#9D8ABA" stroke-width="3" stroke-dasharray="6 4" />
-      <polygon points="{kte_poly}" fill="rgba(91,44,131,0.18)" stroke="#5B2C83" stroke-width="3.2" />
+      <polygon points="{ell_poly}" fill="rgba(183,163,201,0.24)" stroke="#9D8ABA" stroke-width="2.6" stroke-dasharray="6 4" />
+      <polygon points="{kte_poly}" fill="rgba(91,44,131,0.16)" stroke="#5B2C83" stroke-width="3" />
       {ell_circles}
       {kte_circles}
       {''.join(label_svg)}
-      <circle cx="620" cy="790" r="8" fill="#5B2C83" />
-      <text x="638" y="796" font-size="16" fill="#2F1D4A">KTE</text>
-      <circle cx="700" cy="790" r="8" fill="#B7A3C9" stroke="#5B2C83" stroke-width="1" />
-      <text x="718" y="796" font-size="16" fill="#2F1D4A">ELL</text>
+
+      <rect x="690" y="70" width="200" height="74" rx="12" fill="#F8F5FC" stroke="#E1D8EE"/>
+      <circle cx="715" cy="97" r="7" fill="#5B2C83" />
+      <text x="732" y="102" font-size="15" fill="#2F1D4A" font-weight="600">KTE</text>
+      <circle cx="715" cy="122" r="7" fill="#B7A3C9" stroke="#5B2C83" stroke-width="1" />
+      <text x="732" y="127" font-size="15" fill="#2F1D4A" font-weight="600">ELL</text>
+      <text x="715" y="148" font-size="11" fill="#6D5B88">Skála: 1-10</text>
     </svg>
     """
-    components.html(svg, height=860)
+    components.html(svg, height=height + 10)
 
 
 # =========================================================
@@ -927,6 +1324,25 @@ defaults = {
     "team_pdf_pages": None,
     "opp_pdf_pages": None,
     "opponent_dna_text": "",
+    "opponent_profile_text": "",
+    "own_state_text": "",
+    "three_keys_text": "",
+    "risks_text": "",
+    "match_dynamics_text": "",
+    "conclusion_text": "",
+    "coach_primary_model": "GAT",
+    "coach_secondary_model": "BAT",
+    "coach_focus_areas": [],
+    "coach_selected_risks": [],
+    "coach_focus_players": [],
+    "coach_pressing_zone": "közép",
+    "coach_build_up_solution": "vegyes",
+    "coach_defensive_block": "közepes",
+    "coach_match_scenario": "balanced",
+    "coach_plan_a_emphasis": 60,
+    "coach_set_piece_priority": "mindkettő",
+    "coach_second_ball_focus": False,
+    "coach_halfspace_defense_priority": False,
 }
 
 for k, v in defaults.items():
@@ -943,7 +1359,7 @@ st.sidebar.caption("D/P = Direkt / Presszing")
 
 step = st.sidebar.radio(
     "Lépés",
-    ["1. Input", "2. Review", "3. Debug"],
+    ["1. Input", "2. Review", "3. Debug", "4. Export Prep"],
     index=0,
 )
 
@@ -1032,6 +1448,39 @@ if step == "1. Input":
         st.session_state["opp_pdf_pages"] = opp_pdf_pages
         st.session_state["opponent_dna_text"] = opponent_dna_text
 
+        # export-ready structured defaults
+        possession_opp = (opp_metrics.get("possession_pct", 0) * 100) if opp_metrics.get("possession_pct", 0) <= 1 else opp_metrics.get("possession_pct", 0)
+        possession_team = (team_metrics.get("possession_pct", 0) * 100) if team_metrics.get("possession_pct", 0) <= 1 else team_metrics.get("possession_pct", 0)
+
+        st.session_state["coach_primary_model"] = suggested_a
+        st.session_state["coach_secondary_model"] = suggested_b
+        st.session_state["coach_focus_areas"] = ["pressing", "transition"] if dims["Átmenetek"]["Edge"] >= 0 else ["build-up", "rest defense"]
+        st.session_state["coach_selected_risks"] = warnings[:3]
+        st.session_state["coach_focus_players"] = player_focus_options(opp_players)[:3]
+        st.session_state["coach_pressing_zone"] = "közép"
+        st.session_state["coach_build_up_solution"] = "vegyes"
+        st.session_state["coach_defensive_block"] = "közepes"
+        st.session_state["coach_match_scenario"] = "balanced"
+        st.session_state["coach_plan_a_emphasis"] = suggested_split
+        st.session_state["coach_set_piece_priority"] = "mindkettő"
+        st.session_state["coach_second_ball_focus"] = any("second" in w.lower() or "lecsorg" in w.lower() for w in warnings)
+        st.session_state["coach_halfspace_defense_priority"] = any("félter" in w.lower() or "half" in w.lower() for w in warnings)
+
+        st.session_state["opponent_profile_text"] = (
+            f"Formáció: {(opp_pdf_insights['formation'] if opp_pdf_insights else 'n.a.')} | "
+            f"Labdabirtoklás: {round(possession_opp, 1)}% | "
+            f"Lövések / meccs: {round(opp_metrics.get('shots', 0) / max(opp_matches or 1, 1), 2)} | "
+            f"Box entries / meccs: {round(opp_metrics.get('entries_box', 0) / max(opp_matches or 1, 1), 2)}"
+        )
+        st.session_state["own_state_text"] = (
+            f"KTE passzpontosság: {round((team_metrics.get('passes_accurate_pct', 0) * 100) if team_metrics.get('passes_accurate_pct', 0) <= 1 else team_metrics.get('passes_accurate_pct', 0), 1)}% | "
+            f"KTE labdabirtoklás: {round(possession_team, 1)}% | "
+            f"KTE lövések / meccs: {round(team_metrics.get('shots', 0) / max(team_matches or 1, 1), 2)} | "
+            f"KTE key passes / meccs: {round(team_metrics.get('key_passes', 0) / max(team_matches or 1, 1), 2)}"
+        )
+
+        sync_coach_texts_from_controls()
+
         st.success("Adatok feldolgozva.")
 
         a1, a2 = st.columns(2)
@@ -1055,6 +1504,7 @@ if step == "1. Input":
 # REVIEW
 # =========================================================
 
+
 if step == "2. Review":
     dims = st.session_state.get("dims")
     team_metrics = st.session_state.get("team_metrics")
@@ -1062,56 +1512,129 @@ if step == "2. Review":
     team_matches = st.session_state.get("team_matches")
     opp_matches = st.session_state.get("opp_matches")
     opp_players = st.session_state.get("opp_players")
-    warnings = st.session_state.get("warnings")
-    three_keys = st.session_state.get("three_keys")
-    match_dynamics = st.session_state.get("match_dynamics")
     opp_pdf_insights = st.session_state.get("opp_pdf_insights")
     opponent_dna_text = st.session_state.get("opponent_dna_text")
 
     if not dims:
         st.warning("Előbb tölts fel adatot az Input fülön.")
     else:
-        diff_count = distinct_metric_count(team_metrics, opp_metrics)
+        sync_coach_texts_from_controls()
+        render_methodology_block()
 
+        diff_count = distinct_metric_count(team_metrics, opp_metrics)
         if diff_count < 2:
             st.error("A KTE és az ellenfél között túl kevés eltérő nyers metrika van. Nézd meg a Debug fület.")
 
         top1, top2, top3 = st.columns(3)
-        top1.metric("Ajánlott Plan A", st.session_state["selected_plan_a"])
-        top2.metric("Ajánlott Plan B", st.session_state["selected_plan_b"])
+        top1.metric("Ajánlott / választott Plan A", st.session_state["selected_plan_a"])
+        top2.metric("Ajánlott / választott Plan B", st.session_state["selected_plan_b"])
         top3.metric("Arány", f"{st.session_state['selected_split']}/{100 - st.session_state['selected_split']}")
 
         st.subheader("9 taktikai opció – stratégiai térkép")
         render_strategy_map(st.session_state["selected_plan_a"], st.session_state["selected_plan_b"])
 
-        p1, p2, p3 = st.columns(3)
-        with p1:
-            st.session_state["selected_plan_a"] = st.selectbox(
-                "Plan A",
-                options=list(STRATEGY_PALETTE.keys()),
-                index=list(STRATEGY_PALETTE.keys()).index(st.session_state["selected_plan_a"]),
-                format_func=lambda x: f"{x} – {STRATEGY_PALETTE[x]['name']}",
-            )
-        with p2:
-            available_b = [x for x in STRATEGY_PALETTE.keys() if x != st.session_state["selected_plan_a"]]
-            current_b = st.session_state["selected_plan_b"]
-            if current_b not in available_b:
-                current_b = available_b[0]
-            st.session_state["selected_plan_b"] = st.selectbox(
-                "Plan B",
-                options=available_b,
-                index=available_b.index(current_b),
-                format_func=lambda x: f"{x} – {STRATEGY_PALETTE[x]['name']}",
-            )
-        with p3:
-            st.session_state["selected_split"] = st.slider(
-                "Plan A arány (%)",
-                min_value=50,
-                max_value=70,
-                value=st.session_state["selected_split"],
+        coach_left, coach_right = st.columns([1.15, 1])
+        with coach_left:
+            st.subheader("Coach finomhangolás")
+            c1, c2 = st.columns(2)
+            with c1:
+                st.session_state["coach_primary_model"] = st.selectbox(
+                    "Elsődleges játékmodell",
+                    options=list(STRATEGY_PALETTE.keys()),
+                    index=list(STRATEGY_PALETTE.keys()).index(st.session_state["coach_primary_model"]),
+                    format_func=lambda x: f"{x} – {STRATEGY_PALETTE[x]['name']}",
+                )
+            with c2:
+                available_b = [x for x in STRATEGY_PALETTE.keys() if x != st.session_state["coach_primary_model"]]
+                current_b = st.session_state["coach_secondary_model"]
+                if current_b not in available_b:
+                    current_b = available_b[0]
+                st.session_state["coach_secondary_model"] = st.selectbox(
+                    "Alternatív játékmodell",
+                    options=available_b,
+                    index=available_b.index(current_b),
+                    format_func=lambda x: f"{x} – {STRATEGY_PALETTE[x]['name']}",
+                )
+
+            st.session_state["coach_focus_areas"] = st.multiselect(
+                "Meccskép prioritás",
+                options=["pressing", "build-up", "transition", "set pieces", "rest defense"],
+                default=st.session_state["coach_focus_areas"],
             )
 
-        st.info("Az arány nem szavazás. A Plan A az alap játékmodell, a Plan B az alkalmazkodó kiegészítés várható megoszlása.")
+            z1, z2, z3 = st.columns(3)
+            with z1:
+                st.session_state["coach_pressing_zone"] = st.selectbox(
+                    "Pressing fókuszterület",
+                    ["bal", "közép", "jobb", "half-space"],
+                    index=["bal", "közép", "jobb", "half-space"].index(st.session_state["coach_pressing_zone"]),
+                )
+            with z2:
+                st.session_state["coach_build_up_solution"] = st.selectbox(
+                    "Labdakihozatal",
+                    ["rövid", "vegyes", "direkt"],
+                    index=["rövid", "vegyes", "direkt"].index(st.session_state["coach_build_up_solution"]),
+                )
+            with z3:
+                st.session_state["coach_defensive_block"] = st.selectbox(
+                    "Védelmi blokk",
+                    ["mély", "közepes", "magas"],
+                    index=["mély", "közepes", "magas"].index(st.session_state["coach_defensive_block"]),
+                )
+
+            s1, s2 = st.columns(2)
+            with s1:
+                st.session_state["coach_match_scenario"] = st.selectbox(
+                    "Meccsdinamika forgatókönyv",
+                    ["conservative", "balanced", "aggressive"],
+                    index=["conservative", "balanced", "aggressive"].index(st.session_state["coach_match_scenario"]),
+                )
+            with s2:
+                st.session_state["coach_set_piece_priority"] = st.selectbox(
+                    "Pontrúgás prioritás",
+                    ["támadó", "védekező", "mindkettő"],
+                    index=["támadó", "védekező", "mindkettő"].index(st.session_state["coach_set_piece_priority"]),
+                )
+
+            st.session_state["coach_plan_a_emphasis"] = st.slider(
+                "Plan A hangsúly (%)",
+                min_value=50,
+                max_value=70,
+                value=int(st.session_state["coach_plan_a_emphasis"]),
+            )
+
+            f1, f2 = st.columns(2)
+            with f1:
+                st.session_state["coach_second_ball_focus"] = st.checkbox(
+                    "Second ball fókusz", value=st.session_state["coach_second_ball_focus"]
+                )
+            with f2:
+                st.session_state["coach_halfspace_defense_priority"] = st.checkbox(
+                    "Félterület-védekezés prioritás", value=st.session_state["coach_halfspace_defense_priority"]
+                )
+
+            st.session_state["coach_selected_risks"] = st.multiselect(
+                "Fő kockázat prioritások",
+                options=coach_risk_options(st.session_state.get("warnings")),
+                default=st.session_state["coach_selected_risks"],
+            )
+
+            st.session_state["coach_focus_players"] = st.multiselect(
+                "Kulcsjátékos-fókusz",
+                options=player_focus_options(opp_players),
+                default=st.session_state["coach_focus_players"],
+            )
+
+            sync_coach_texts_from_controls()
+
+        with coach_right:
+            st.subheader("Strukturált briefing preview")
+            st.markdown("**Ellenfél profil**")
+            st.info(st.session_state["opponent_profile_text"])
+            st.markdown("**Saját állapot**")
+            st.info(st.session_state["own_state_text"])
+            st.markdown("**Konklúzió**")
+            st.success(st.session_state["conclusion_text"])
 
         with st.expander("A 9 taktikai opció táblázata", expanded=False):
             st.table(strategy_palette_rows())
@@ -1119,7 +1642,7 @@ if step == "2. Review":
         st.subheader("Dimenzió tábla")
         st.dataframe(pd.DataFrame(dims).T, use_container_width=True)
 
-        c1, c2 = st.columns([1.15, 1])
+        c1, c2 = st.columns([1.25, 1])
         with c1:
             st.subheader("Pókháló")
             render_radar_svg(dims)
@@ -1148,23 +1671,21 @@ if step == "2. Review":
         r1, r2 = st.columns(2)
         with r1:
             st.subheader("Opponent DNA")
-            st.text_area("DNA", value=opponent_dna_text, height=220)
-
+            st.code(opponent_dna_text)
         with r2:
             st.subheader("Kockázatok")
-            risk_text = "\n".join([f"- {x}" for x in warnings]) if warnings else ""
-            st.text_area("Kockázatok", value=risk_text, height=220)
+            for line in parse_bullet_text(st.session_state["risks_text"]):
+                st.write(f"- {line}")
 
         r3, r4 = st.columns(2)
         with r3:
             st.subheader("3 kulcs")
-            keys_text = "\n".join([f"- {x}" for x in (three_keys or [])])
-            st.text_area("3 kulcs", value=keys_text, height=180)
-
+            for line in parse_bullet_text(st.session_state["three_keys_text"]):
+                st.write(f"- {line}")
         with r4:
             st.subheader("Várható meccsdinamika")
-            dyn_text = "\n".join([f"- {x}" for x in (match_dynamics or [])])
-            st.text_area("Meccsdinamika", value=dyn_text, height=180)
+            for line in parse_bullet_text(st.session_state["match_dynamics_text"]):
+                st.write(f"- {line}")
 
         if opp_pdf_insights:
             st.subheader("PDF-ből kinyert tactical notes")
@@ -1182,49 +1703,9 @@ if step == "2. Review":
                 for x in (opp_pdf_insights["set_piece_lines"][:3] + opp_pdf_insights["player_threat_lines"][:3]):
                     st.write(f"- {x}")
 
-        st.subheader("Gyors briefing draft")
-        briefing_left, briefing_right = st.columns(2)
 
-        with briefing_left:
-            opp_formation = opp_pdf_insights["formation"] if opp_pdf_insights else "n.a."
-            st.text_area(
-                "Ellenfél profil",
-                value=(
-                    f"Formáció: {opp_formation} | "
-                    f"Labdabirtoklás: {round((opp_metrics.get('possession_pct', 0) * 100) if opp_metrics.get('possession_pct', 0) <= 1 else opp_metrics.get('possession_pct', 0), 1)}% | "
-                    f"Lövések / meccs: {round(opp_metrics.get('shots', 0) / max(opp_matches or 1, 1), 2)} | "
-                    f"Box entries / meccs: {round(opp_metrics.get('entries_box', 0) / max(opp_matches or 1, 1), 2)}"
-                ),
-                height=120,
-            )
-            st.text_area(
-                "Saját állapot",
-                value=(
-                    f"KTE passzpontosság: {round((team_metrics.get('passes_accurate_pct', 0) * 100) if team_metrics.get('passes_accurate_pct', 0) <= 1 else team_metrics.get('passes_accurate_pct', 0), 1)}% | "
-                    f"KTE lövések / meccs: {round(team_metrics.get('shots', 0) / max(team_matches or 1, 1), 2)} | "
-                    f"KTE key passes / meccs: {round(team_metrics.get('key_passes', 0) / max(team_matches or 1, 1), 2)}"
-                ),
-                height=120,
-            )
-
-        with briefing_right:
-            keys_block = "\n".join([f"- {x}" for x in (three_keys or [])])
-            st.text_area(
-                "3 kulcs",
-                value=keys_block,
-                height=120,
-            )
-            st.text_area(
-                "Konklúzió",
-                value=(
-                    f"Ajánlott fő stratégia: {st.session_state['selected_plan_a']} – {STRATEGY_PALETTE[st.session_state['selected_plan_a']]['name']}\n"
-                    f"Alternatíva: {st.session_state['selected_plan_b']} – {STRATEGY_PALETTE[st.session_state['selected_plan_b']]['name']}\n"
-                    f"Javasolt megoszlás: {st.session_state['selected_split']}/{100 - st.session_state['selected_split']}"
-                ),
-                height=120,
-            )
-
-
+# =========================================================
+# DEBUG
 # =========================================================
 # DEBUG
 # =========================================================
@@ -1309,3 +1790,91 @@ if step == "3. Debug":
         st.write("Felhasznált oldalak:", [x["page_number"] for x in pages])
         st.text_area("Opponent PDF extracted text", value=text[:6000], height=260)
         st.write(build_pdf_insights(text))
+
+
+# =========================================================
+# EXPORT PREP
+# =========================================================
+
+
+if step == "4. Export Prep":
+    dims = st.session_state.get("dims")
+    opp_players = st.session_state.get("opp_players")
+
+    if not dims:
+        st.warning("Előbb tölts fel adatot az Input fülön.")
+    else:
+        sync_coach_texts_from_controls()
+        render_methodology_block()
+        st.header("Export Prep – template előkészítés")
+
+        coach_controls = {
+            "primary_model": st.session_state["coach_primary_model"],
+            "secondary_model": st.session_state["coach_secondary_model"],
+            "focus_areas": st.session_state["coach_focus_areas"],
+            "selected_risks": st.session_state["coach_selected_risks"],
+            "focus_players": st.session_state["coach_focus_players"],
+            "pressing_zone": st.session_state["coach_pressing_zone"],
+            "build_up_solution": st.session_state["coach_build_up_solution"],
+            "defensive_block": st.session_state["coach_defensive_block"],
+            "match_scenario": st.session_state["coach_match_scenario"],
+            "plan_a_emphasis": st.session_state["coach_plan_a_emphasis"],
+            "set_piece_priority": st.session_state["coach_set_piece_priority"],
+            "second_ball_focus": st.session_state["coach_second_ball_focus"],
+            "halfspace_defense_priority": st.session_state["coach_halfspace_defense_priority"],
+        }
+
+        package = build_export_package(
+            selected_plan_a=st.session_state["selected_plan_a"],
+            selected_plan_b=st.session_state["selected_plan_b"],
+            selected_split=st.session_state["selected_split"],
+            dims=dims,
+            opponent_profile_text=st.session_state["opponent_profile_text"],
+            own_state_text=st.session_state["own_state_text"],
+            three_keys_text=st.session_state["three_keys_text"],
+            risks_text=st.session_state["risks_text"],
+            match_dynamics_text=st.session_state["match_dynamics_text"],
+            conclusion_text=st.session_state["conclusion_text"],
+            opponent_dna_text=st.session_state["opponent_dna_text"],
+            opp_players=opp_players,
+            coach_controls=coach_controls,
+        )
+
+        md_export = build_markdown_export(package)
+        json_export = json.dumps(package, ensure_ascii=False, indent=2)
+        pdf_export = build_pdf_export_bytes(package)
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.subheader("JSON export package")
+            st.code(json_export, language="json")
+            st.download_button(
+                "JSON letöltése",
+                data=json_export.encode("utf-8"),
+                file_name="briefing_export_package.json",
+                mime="application/json",
+            )
+            st.download_button(
+                "PDF briefing letöltése",
+                data=pdf_export,
+                file_name="briefing_export_package.pdf",
+                mime="application/pdf",
+            )
+
+        with col2:
+            st.subheader("Markdown export preview")
+            st.text_area("Markdown", value=md_export, height=480)
+            st.download_button(
+                "Markdown letöltése",
+                data=md_export.encode("utf-8"),
+                file_name="briefing_export_package.md",
+                mime="text/markdown",
+            )
+
+        st.subheader("Coach control snapshot")
+        st.json(coach_controls)
+
+        st.subheader("Mi jön ezután?")
+        st.write("- Következő lépés: a JSON/PDF package mezőit rámapeljük a gold standard PPT template konkrét textboxaira.")
+        st.write("- Utána: tényleges PPT generálás és visszaadás kész briefing deckként.")
