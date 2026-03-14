@@ -2800,9 +2800,11 @@ h1,h2,h3,h4,p,li,span,label,div { color:#18212F; }
 .summary-grid-tight { display:grid; grid-template-columns:1.2fr .85fr; gap:12px; }
 .summary-micro { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
 .summary-pill { background:#F2ECFF; color:#4B2E83; border:1px solid #DED1FF; padding:5px 10px; border-radius:999px; font-size:.82rem; font-weight:600; }
-.print-keep-together { break-inside: avoid; page-break-inside: avoid; margin-bottom: 10px; }
 .summary-page-break { break-before: page; page-break-before: always; margin-top: 0; }
-.summary-avoid-break { break-inside: avoid; page-break-inside: avoid; }
+.summary-avoid-break, .summary-block, .summary-chartbox { break-inside: avoid; page-break-inside: avoid; }
+.summary-chartbox iframe { margin-bottom: -42px !important; }
+.summary-section-tight h3, .summary-section-tight h4, .summary-section-tight p { margin-bottom: .35rem !important; }
+.summary-footer-note { margin-top: 10px; font-size:.86rem; color:#5B6474; text-align:right; }
 @media (max-width: 980px) {
   .summary-kpi { grid-template-columns:1fr; }
   .summary-grid-tight { grid-template-columns:1fr; }
@@ -2810,8 +2812,8 @@ h1,h2,h3,h4,p,li,span,label,div { color:#18212F; }
 @media print {
   html, body, [data-testid="stAppViewContainer"], .stApp { background:#F6F1FF !important; color:#111111 !important; }
   .kte-hero, .summary-kpi .k { background:#FFFFFF !important; box-shadow:none !important; }
-  .print-keep-together, .summary-avoid-break { break-inside: avoid; page-break-inside: avoid; }
   .summary-page-break { break-before: page; page-break-before: always; }
+  .summary-avoid-break, .summary-block, .summary-chartbox { break-inside: avoid; page-break-inside: avoid; }
   h1, h2, h3, h4, h5 { break-after: avoid; page-break-after: avoid; }
 }
 </style>
@@ -3352,8 +3354,9 @@ def render_summary_page(package: Dict[str, object]):
     mode_label = "korrigált döntési profil" if p1.get("dimension_mode") == "adjusted" else "alap matchup-profil"
 
     st.markdown("<div class='summary-shell'>", unsafe_allow_html=True)
-    st.markdown("<div style='height:0.8rem;'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:1.0rem;'></div>", unsafe_allow_html=True)
     st.markdown("### Vezetői összegző")
+    st.markdown("<div class='summary-footer-note'>Készítette: Sziegl Gábor</div>", unsafe_allow_html=True)
 
     st.markdown(f"""
     <div class='summary-kpi'>
@@ -3375,7 +3378,7 @@ def render_summary_page(package: Dict[str, object]):
     </div>
     """, unsafe_allow_html=True)
 
-    top_left, top_right = st.columns([1.18, 0.82])
+    top_left, top_right = st.columns([1.2, 0.8])
     with top_left:
         st.subheader("🎯 Teljes konklúzió")
         for line in conclusion_lines[:5]:
@@ -3384,7 +3387,7 @@ def render_summary_page(package: Dict[str, object]):
             f"<div class='summary-micro'><span class='summary-pill'>Plan A: {pdf_safe_text(p1.get('plan_a','-'))}</span>"
             f"<span class='summary-pill'>Plan B: {pdf_safe_text(p1.get('plan_b','-'))}</span>"
             f"<span class='summary-pill'>Arány: {pdf_safe_text(p1.get('plan_split','-'))}</span></div>",
-            unsafe_allow_html=True
+            unsafe_allow_html=True,
         )
 
     with top_right:
@@ -3393,7 +3396,7 @@ def render_summary_page(package: Dict[str, object]):
             st.write(f"• Kulcs: {item}")
         for item in p1.get('risks', [])[:2]:
             st.write(f"• Kockázat: {item}")
-        st.markdown("<div style='height:0.35rem;'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='height:0.15rem;'></div>", unsafe_allow_html=True)
         st.subheader("🚨 Legveszélyesebb ellenfél-játékosok")
         if danger:
             for item in danger[:3]:
@@ -3401,22 +3404,25 @@ def render_summary_page(package: Dict[str, object]):
         else:
             st.write("Nincs elérhető játékosveszély-lista.")
 
-    st.markdown("<div class='summary-page-break summary-avoid-break'>", unsafe_allow_html=True)
+    st.markdown("<div class='summary-page-break summary-avoid-break summary-section-tight'>", unsafe_allow_html=True)
     st.markdown("#### 📊 Vizualizációk")
-    c1, c2 = st.columns([1, 1])
+    c1, c2 = st.columns([0.95, 1.05])
     with c1:
         st.markdown("##### 7 dimenziós profil")
-        render_radar_svg(dims, height=520)
+        st.markdown("<div class='summary-chartbox'>", unsafe_allow_html=True)
+        render_radar_svg(dims, height=360)
+        st.markdown("</div>", unsafe_allow_html=True)
     with c2:
         st.markdown("##### Dimenziók összehasonlítása")
-        render_bar_chart(dims, height=300)
+        st.markdown("<div class='summary-chartbox'>", unsafe_allow_html=True)
+        render_bar_chart(dims, height=240)
+        st.markdown("</div>", unsafe_allow_html=True)
     st.markdown("##### 9 stratégia térképe")
-    render_strategy_map(p1.get("plan_a"), p1.get("plan_b"), height=260)
+    st.markdown("<div class='summary-chartbox'>", unsafe_allow_html=True)
+    render_strategy_map(p1.get("plan_a"), p1.get("plan_b"), height=185)
     st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown("<div class='summary-page-break summary-avoid-break'>", unsafe_allow_html=True)
     st.subheader("🧠 Módszertan röviden")
-    st.write(get_methodology_summary())
+    st.caption(get_methodology_summary())
     st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("</div>", unsafe_allow_html=True)
