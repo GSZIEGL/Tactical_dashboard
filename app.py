@@ -1288,32 +1288,231 @@ def render_methodology_block():
     with st.expander("Metodika / hogyan dolgozik az app", expanded=False):
         st.markdown(
             """
-**Input források**
-- Match Excel: Main statistics sheet, oszlopalapú Total sor olvasás
-- Player Excel: top játékosprofilok percpadlóval és top 3 rangsorokkal
-- PDF: célzott oldalak (2,3,4,5,7), nem teljes dokumentum
-
-**7 dimenzió logika**
-- A total értékek ott, ahol kell, per meccs skálázódnak
-- A dimenziók 1-10 közé normalizált összehasonlító score-ok
-- A különbségek alapján készül a KTE vs ellenfél edge
-
-**Stratégiai javaslat**
-- Átmenet / kontroll / támadási edge alapján választ elsődleges Plan A-t
-- A Plan B mindig eltérő stratégiai kód
-- A coach felületen ez strukturáltan felülírható
-
-**Plan A / Plan B arány**
-- A slider a tervezett hangsúlyt mutatja
-- 60/40 = alapvetően Plan A, de előkészített Plan B váltás
-- 50/50 = közel kiegyensúlyozott, két forgatókönyves meccsterv
-
-**Coach input elv**
-- Nincs szabad szöveg
-- Csak checkbox / selectbox / multiselect / slider
-- Emiatt a briefing export-kompatibilis marad
+Ez az alkalmazás **adatalapú taktikai döntéselőkészítő**, nem szöveges ötletgyűjtő: a match Excel, player Excel és célzott PDF-scouting inputok alapján épít fel egy egységes matchup-képet. A rendszer a csapatokat **7 dimenzió mentén skálázza**, majd ezekből illeszti a meccset a **9 alapstratégia** egyikéhez vagy azok kombinációjához. A javaslat nem egyetlen mutatóból készül, hanem a labdakihozatal, pressing, támadóprofil, pontrúgás, területnyerés és meccsdinamika együttes olvasatából, ezért a briefing mögött konkrét adatstruktúra áll. A döntési logikában van **MI-alapú strukturálás és szabályozott következtetési réteg**, de ugyanúgy beépül a saját szakmai munkád is: a coach-panelen te finomítod a game plant, nem a rendszer ír helyetted szabad szöveget. Így a végtermék egyszerre marad egzakt, exportálható és szakmailag vállalható az edzői stáb felé.
             """
         )
+
+
+def get_methodology_summary() -> str:
+    return (
+        "Ez az alkalmazás adatalapú taktikai döntéselőkészítő: a match Excel, player Excel és célzott PDF-scouting inputok alapján épít fel matchup-profilt. "
+        "A 7 dimenzió és a 9 stratégiai alapkód együtt adja a Plan A / Plan B logikát, ezért a javaslat nem megérzésre, hanem összevethető mutatókra épül. "
+        "A rendszerben MI-alapú strukturálás és szabályozott következtetési réteg is dolgozik, de a coach-felületen a saját szakmai finomhangolásod is megjelenik. "
+        "Így a végtermék egyszerre egzakt, konzisztens és exportálható briefingként használható."
+    )
+
+
+def summarize_danger_players(key_player_threats: Dict[str, List[dict]]) -> List[str]:
+    priority = ["creators", "progressors", "build_up", "duel_players", "defenders"]
+    summaries = []
+    seen = set()
+    label_map = {
+        "creators": "kreatív végrehajtó",
+        "progressors": "előrejáték / területnyerés",
+        "build_up": "build-up stabilitás",
+        "duel_players": "párharc / második labda",
+        "defenders": "labdaszerzés / védekezés",
+    }
+    for group in priority:
+        for r in key_player_threats.get(group, [])[:3]:
+            name = str(r.get("player") or r.get("Player") or "").strip()
+            pos = str(r.get("position") or r.get("Position") or "").strip()
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            role = label_map.get(group, group)
+            summaries.append(f"{name}{f' ({pos})' if pos else ''} – fő veszély: {role}")
+            if len(summaries) >= 3:
+                return summaries
+    return summaries
+
+
+def get_bar_chart_svg(dims: Dict[str, Dict[str, float]]) -> str:
+    labels = list(dims.keys())
+    width = 980
+    height = 420
+    left = 70
+    bottom = 60
+    top = 35
+    chart_h = 280
+    plot_w = 850
+    groups = len(labels)
+    group_w = plot_w / max(groups, 1)
+    bar_w = min(26, group_w * 0.28)
+
+    svg = [f'<svg width="100%" height="{height}" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg">']
+    svg.append('<rect width="100%" height="100%" rx="18" ry="18" fill="white" />')
+
+    for tick in range(0, 11, 2):
+        y = top + chart_h - (tick / 10.0) * chart_h
+        svg.append(f'<line x1="{left}" y1="{y:.1f}" x2="{left + plot_w}" y2="{y:.1f}" stroke="#ECE7F4" stroke-width="1" />')
+        svg.append(f'<text x="{left - 12}" y="{y + 4:.1f}" font-size="11" text-anchor="end" fill="#7E7097">{tick}</text>')
+
+    for i, label in enumerate(labels):
+        center = left + i * group_w + group_w / 2
+        kte = dims[label]["KTE"]
+        ell = dims[label]["ELL"]
+        x1 = center - bar_w - 4
+        x2 = center + 4
+        h1 = (kte / 10.0) * chart_h
+        h2 = (ell / 10.0) * chart_h
+        y1 = top + chart_h - h1
+        y2 = top + chart_h - h2
+        svg.append(f'<rect x="{x1:.1f}" y="{y1:.1f}" width="{bar_w:.1f}" height="{h1:.1f}" rx="4" fill="#5B2C83" />')
+        svg.append(f'<rect x="{x2:.1f}" y="{y2:.1f}" width="{bar_w:.1f}" height="{h2:.1f}" rx="4" fill="#B7A3C9" stroke="#5B2C83" stroke-width="0.8" />')
+        wrapped = label.replace(' ', '\n').split('\n')
+        wrapped = wrapped[:2] if len(wrapped) > 2 else wrapped
+        base_y = top + chart_h + 18
+        for j, part in enumerate(wrapped):
+            svg.append(f'<text x="{center:.1f}" y="{base_y + 14*j:.1f}" font-size="11" text-anchor="middle" fill="#2F1D4A">{part}</text>')
+
+    svg.append(f'<rect x="{width - 215}" y="26" width="180" height="58" rx="10" fill="#F8F5FC" stroke="#E1D8EE" />')
+    svg.append(f'<rect x="{width - 195}" y="43" width="12" height="12" rx="2" fill="#5B2C83" />')
+    svg.append(f'<text x="{width - 175}" y="54" font-size="13" fill="#2F1D4A">KTE</text>')
+    svg.append(f'<rect x="{width - 120}" y="43" width="12" height="12" rx="2" fill="#B7A3C9" stroke="#5B2C83" stroke-width="0.8" />')
+    svg.append(f'<text x="{width - 100}" y="54" font-size="13" fill="#2F1D4A">ELL</text>')
+    svg.append('</svg>')
+    return ''.join(svg)
+
+
+def get_strategy_map_svg(selected_a: Optional[str] = None, selected_b: Optional[str] = None) -> str:
+    rows = strategy_scatter_data(selected_a, selected_b)
+    width = 980
+    height = 470
+    left = 110
+    top = 50
+    plot_w = 760
+    plot_h = 300
+
+    def px_x(v):
+        return left + ((v - 1) / 5.0) * plot_w
+
+    def px_y(v):
+        return top + plot_h - ((v - 1) / 4.0) * plot_h
+
+    colors = {"Paletta": "#5B2C83", "Plan A": "#E0A500", "Plan B": "#2AA7A1"}
+    svg = [f'<svg width="100%" height="{height}" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg">']
+    svg.append('<rect width="100%" height="100%" rx="18" ry="18" fill="white" />')
+
+    for x in range(1, 7):
+        px = px_x(x)
+        svg.append(f'<line x1="{px:.1f}" y1="{top}" x2="{px:.1f}" y2="{top + plot_h}" stroke="#ECE7F4" stroke-width="1" />')
+    for y in range(1, 6):
+        py = px_y(y)
+        svg.append(f'<line x1="{left}" y1="{py:.1f}" x2="{left + plot_w}" y2="{py:.1f}" stroke="#ECE7F4" stroke-width="1" />')
+
+    x_labels = ["Direkt", "D/P", "Vegyes", "Kiegy.", "Kontroll", "Agresszív"]
+    for i, lab in enumerate(x_labels, start=1):
+        svg.append(f'<text x="{px_x(i):.1f}" y="{top + plot_h + 28}" font-size="12" text-anchor="middle" fill="#2F1D4A">{lab}</text>')
+    y_labels = {1: "Mély", 2: "Low-mid", 3: "Közép", 4: "Mid-high", 5: "Magas"}
+    for i, lab in y_labels.items():
+        svg.append(f'<text x="{left - 12}" y="{px_y(i) + 4:.1f}" font-size="12" text-anchor="end" fill="#2F1D4A">{lab}</text>')
+
+    svg.append(f'<text x="{left + plot_w/2:.1f}" y="{height - 18}" font-size="13" text-anchor="middle" fill="#6D5B88">Játékstílus: Direkt → Kontroll</text>')
+    svg.append(f'<text x="26" y="{top + plot_h/2:.1f}" font-size="13" transform="rotate(-90 26 {top + plot_h/2:.1f})" text-anchor="middle" fill="#6D5B88">Blokkmagasság: Mély → Magas</text>')
+
+    for row in rows:
+        x = px_x(row['x'])
+        y = px_y(row['y'])
+        fill = colors.get(row['marker_type'], '#5B2C83')
+        size = 19 if row['marker_type'] != 'Paletta' else 16
+        svg.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{size}" fill="{fill}" opacity="0.92" />')
+        svg.append(f'<text x="{x:.1f}" y="{y+5:.1f}" font-size="12" text-anchor="middle" fill="white" font-weight="700">{row["code"]}</text>')
+    svg.append(f'<rect x="{width - 230}" y="26" width="190" height="76" rx="10" fill="#F8F5FC" stroke="#E1D8EE" />')
+    for idx, (lab, col) in enumerate([('Paletta','#5B2C83'),('Plan A','#E0A500'),('Plan B','#2AA7A1')]):
+        cy = 48 + idx*20
+        svg.append(f'<circle cx="{width - 205}" cy="{cy}" r="6" fill="{col}" />')
+        svg.append(f'<text x="{width - 190}" y="{cy+4}" font-size="12" fill="#2F1D4A">{lab}</text>')
+    svg.append('</svg>')
+    return ''.join(svg)
+
+
+def build_html_export(package: Dict[str, object]) -> str:
+    p1 = package["page_1_onepager"]
+    p3 = package["page_3_tactical_overview"]
+    ds = package.get("decision_support", {}) or {}
+    coach = package.get("coach_controls", {}) or {}
+    danger = summarize_danger_players(p3.get("key_player_threats", {}))
+    dims = p1["dimensions"]
+    radar_svg = get_radar_svg(dims)
+    bar_svg = get_bar_chart_svg(dims)
+    map_svg = get_strategy_map_svg(p1["plan_a"], p1["plan_b"])
+
+    def bullets(items):
+        return ''.join(f'<li>{x}</li>' for x in items) or '<li>n.a.</li>'
+
+    dim_rows = ''.join(
+        f"<tr><td>{dim}</td><td>{vals['KTE']}</td><td>{vals['ELL']}</td><td>{vals['Edge']}</td></tr>"
+        for dim, vals in dims.items()
+    )
+
+    return f"""<html><head><meta charset='utf-8'><title>Tactical Briefing</title>
+    <style>
+    body {{ font-family: Arial, sans-serif; background:#F4F1F8; color:#1E1630; margin:0; padding:24px; }}
+    .page {{ background:white; border-radius:18px; padding:24px; margin-bottom:20px; box-shadow:0 10px 30px rgba(43,25,72,.08); }}
+    .grid2 {{ display:grid; grid-template-columns:1fr 1fr; gap:18px; }}
+    .grid3 {{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:18px; }}
+    .card {{ background:#F8F5FC; border:1px solid #E1D8EE; border-radius:14px; padding:16px; }}
+    h1,h2,h3 {{ margin:0 0 12px 0; }}
+    table {{ width:100%; border-collapse:collapse; font-size:13px; }}
+    th,td {{ border:1px solid #E1D8EE; padding:8px; text-align:left; }}
+    th {{ background:#EEE8F5; }}
+    ul {{ margin:8px 0 0 18px; }}
+    .chip {{ display:inline-block; background:#EEE8F5; padding:6px 10px; border-radius:999px; margin:4px 6px 0 0; font-size:12px; }}
+    .hero {{ display:flex; justify-content:space-between; gap:18px; align-items:flex-start; }}
+    </style></head><body>
+    <div class='page'>
+      <div class='hero'>
+        <div>
+          <h1>Tactical Briefing Export</h1>
+          <p>{get_methodology_summary()}</p>
+        </div>
+        <div class='card'>
+          <strong>Plan A:</strong> {p1['plan_a']}<br>
+          <strong>Plan B:</strong> {p1['plan_b']}<br>
+          <strong>Arány:</strong> {p1['plan_split']}<br>
+          <strong>Build-up:</strong> {coach.get('build_up_solution', 'n.a.')}<br>
+          <strong>Blokk:</strong> {coach.get('defensive_block', 'n.a.')}
+        </div>
+      </div>
+    </div>
+
+    <div class='page'>
+      <h2>Három fő diagram</h2>
+      <div class='card'>{radar_svg}</div>
+      <div class='card' style='margin-top:16px'>{bar_svg}</div>
+      <div class='card' style='margin-top:16px'>{map_svg}</div>
+    </div>
+
+    <div class='page'>
+      <h2>7 dimenziós összehasonlítás</h2>
+      <table><thead><tr><th>Dimenzió</th><th>KTE</th><th>ELL</th><th>Edge</th></tr></thead><tbody>{dim_rows}</tbody></table>
+    </div>
+
+    <div class='page'>
+      <div class='grid2'>
+        <div class='card'><h3>Ellenfél profil</h3><p>{p1['opponent_profile']}</p></div>
+        <div class='card'><h3>Saját állapot</h3><p>{p1['own_state']}</p></div>
+        <div class='card'><h3>Opponent DNA</h3><p>{p3['opponent_dna']}</p></div>
+        <div class='card'><h3>Konklúzió</h3><p>{p1['conclusion']}</p></div>
+      </div>
+    </div>
+
+    <div class='page'>
+      <div class='grid3'>
+        <div class='card'><h3>3 kulcs</h3><ul>{bullets(p1.get('three_keys', []))}</ul></div>
+        <div class='card'><h3>Kockázatok</h3><ul>{bullets(p1.get('risks', []))}</ul></div>
+        <div class='card'><h3>Meccsdinamika</h3><ul>{bullets(p3.get('match_dynamics', []))}</ul></div>
+      </div>
+    </div>
+
+    <div class='page'>
+      <div class='grid2'>
+        <div class='card'><h3>Legveszélyesebb ellenfél-játékosok</h3><ul>{bullets(danger)}</ul></div>
+        <div class='card'><h3>Taktikai döntési blokk</h3><p>{ds.get('executive_summary', '')}</p><ul>{bullets(ds.get('recommendation', []))}</ul></div>
+      </div>
+    </div>
+    </body></html>"""
 
 
 def build_pdf_export_bytes(package: Dict[str, object]) -> bytes:
@@ -1341,7 +1540,9 @@ def build_pdf_export_bytes(package: Dict[str, object]) -> bytes:
     p3 = package["page_3_tactical_overview"]
 
     story.append(Paragraph("Tactical Briefing Export", title_style))
-    story.append(Spacer(1, 6))
+    story.append(Spacer(1, 4))
+    story.append(Paragraph(get_methodology_summary(), body))
+    story.append(Spacer(1, 8))
 
     meta = [
         ["Plan A", str(p1["plan_a"])],
@@ -1400,21 +1601,13 @@ def build_pdf_export_bytes(package: Dict[str, object]) -> bytes:
         story.append(Paragraph(f"• {item}", body))
 
     story.append(Spacer(1, 4))
-    story.append(Paragraph("Kulcsjátékos fókusz", heading))
-    for item in package.get("coach_controls", {}).get("focus_players", []):
-        story.append(Paragraph(f"• {item}", body))
-    if not package.get("coach_controls", {}).get("focus_players", []):
-        story.append(Paragraph("• nincs külön kiválasztva", body))
-
-    story.append(Spacer(1, 4))
-    story.append(Paragraph("Opponent key players", heading))
-    for group_name, records in p3["key_player_threats"].items():
-        story.append(Paragraph(group_name, small))
-        if not records:
-            story.append(Paragraph("–", small))
-            continue
-        for r in records[:3]:
-            story.append(Paragraph(str(r), small))
+    story.append(Paragraph("Legveszélyesebb ellenfél-játékosok", heading))
+    danger = summarize_danger_players(p3.get("key_player_threats", {}))
+    if danger:
+        for item in danger:
+            story.append(Paragraph(f"• {item}", body))
+    else:
+        story.append(Paragraph("• nincs kiemelt veszélyforrás azonosítva", body))
 
     doc.build(story)
     pdf = buffer.getvalue()
@@ -1521,12 +1714,10 @@ def build_markdown_export(package: Dict[str, object]) -> str:
     for x in p3["match_dynamics"]:
         md.append(f"- {x}")
     md.append("")
-    md.append("### Key player threats")
-    for group_name, records in p3["key_player_threats"].items():
-        md.append(f"#### {group_name}")
-        for r in records:
-            md.append(f"- {r}")
-        md.append("")
+    md.append("### Legveszélyesebb ellenfél-játékosok")
+    for x in summarize_danger_players(p3.get("key_player_threats", {})):
+        md.append(f"- {x}")
+    md.append("")
     return "\n".join(md)
 
 
@@ -1553,6 +1744,10 @@ def render_export_preview(package: Dict[str, object]):
     p3 = package["page_3_tactical_overview"]
     ds = package.get("decision_support", {}) or {}
     coach = package.get("coach_controls", {}) or {}
+    danger = summarize_danger_players(p3.get("key_player_threats", {}))
+
+    st.markdown("### Briefing deck preview")
+    st.info(get_methodology_summary())
 
     top1, top2, top3 = st.columns([1.1, 1.1, 1])
     with top1:
@@ -1568,6 +1763,11 @@ def render_export_preview(package: Dict[str, object]):
         st.write(f"- Build-up: {coach.get('build_up_solution', 'n.a.')}")
         st.write(f"- Blokk: {coach.get('defensive_block', 'n.a.')}")
         st.write(f"- Szenárió: {coach.get('match_scenario', 'n.a.')}")
+
+    st.markdown("### Három fő diagram")
+    components.html(get_radar_svg(p1["dimensions"]), height=770)
+    components.html(get_bar_chart_svg(p1["dimensions"]), height=430)
+    components.html(get_strategy_map_svg(p1["plan_a"], p1["plan_b"]), height=480)
 
     st.markdown("### 7 dimenziós összkép")
     dim_df = pd.DataFrame(p1["dimensions"]).T.reset_index().rename(columns={"index": "Dimenzió"})
@@ -1599,19 +1799,14 @@ def render_export_preview(package: Dict[str, object]):
         for x in p3.get("match_dynamics", []):
             st.write(f"- {x}")
 
-    st.markdown("### Fix ellenfél kulcsjátékosok")
-    key_groups = p3.get("key_player_threats", {})
-    kg1, kg2, kg3 = st.columns(3)
-    groups = list(key_groups.items())
-    for col, pair in zip([kg1, kg2, kg3], groups[:3]):
-        group_name, records = pair
-        with col:
-            st.markdown(f"**{group_name}**")
-            if records:
-                for r in records[:3]:
-                    st.write(f"- {r}")
-            else:
-                st.write("- n.a.")
+    st.markdown("### Legveszélyesebb ellenfél-játékosok")
+    if danger:
+        cols = st.columns(min(3, len(danger)))
+        for col, item in zip(cols, danger[:3]):
+            with col:
+                st.warning(item)
+    else:
+        st.caption("Nincs kiemelt ellenfél-veszélyforrás azonosítva.")
 
     if ds:
         st.markdown("### Taktikai döntési blokk")
@@ -1726,7 +1921,7 @@ def render_bar_chart(dims: Dict[str, Dict[str, float]]):
 
 
 
-def render_radar_svg(dims: Dict[str, Dict[str, float]]):
+def get_radar_svg(dims: Dict[str, Dict[str, float]]) -> str:
     labels = list(dims.keys())
     kte_vals = [dims[x]["KTE"] for x in labels]
     ell_vals = [dims[x]["ELL"] for x in labels]
@@ -1782,38 +1977,26 @@ def render_radar_svg(dims: Dict[str, Dict[str, float]]):
         x2 = cx + math.cos(ang) * max_r
         y2 = cy + math.sin(ang) * max_r
         axes.append(f'<line x1="{cx}" y1="{cy}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="#D8D2E3" stroke-width="1" />')
-
         lx = cx + math.cos(ang) * (max_r + 85)
         ly = cy + math.sin(ang) * (max_r + 85)
-
         anchor = "middle"
         if lx < cx - 40:
             anchor = "end"
         elif lx > cx + 40:
             anchor = "start"
-
         wrapped = wrap_label(label)
         tspans = []
         for j, part in enumerate(wrapped):
             dy = 0 if j == 0 else 18
             tspans.append(f'<tspan x="{lx:.1f}" dy="{dy}">{part}</tspan>')
-        label_svg.append(
-            f'<text x="{lx:.1f}" y="{ly:.1f}" font-size="16" text-anchor="{anchor}" fill="#2F1D4A" font-weight="600">{"".join(tspans)}</text>'
-        )
+        label_svg.append(f'<text x="{lx:.1f}" y="{ly:.1f}" font-size="16" text-anchor="{anchor}" fill="#2F1D4A" font-weight="600">{"".join(tspans)}</text>')
 
     kte_poly, kte_pts = polygon_points(kte_vals)
     ell_poly, ell_pts = polygon_points(ell_vals)
+    kte_circles = "".join(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4.8" fill="#5B2C83" stroke="white" stroke-width="1.2" />' for x, y in kte_pts)
+    ell_circles = "".join(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4.8" fill="#B7A3C9" stroke="#5B2C83" stroke-width="1.0" />' for x, y in ell_pts)
 
-    kte_circles = "".join(
-        f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4.8" fill="#5B2C83" stroke="white" stroke-width="1.2" />'
-        for x, y in kte_pts
-    )
-    ell_circles = "".join(
-        f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4.8" fill="#B7A3C9" stroke="#5B2C83" stroke-width="1.0" />'
-        for x, y in ell_pts
-    )
-
-    svg = f"""
+    return f"""
     <svg width="100%" height="{height}" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg">
       <rect width="100%" height="100%" rx="18" ry="18" fill="white" />
       {''.join(grid_polys)}
@@ -1824,7 +2007,6 @@ def render_radar_svg(dims: Dict[str, Dict[str, float]]):
       {ell_circles}
       {kte_circles}
       {''.join(label_svg)}
-
       <rect x="690" y="70" width="200" height="74" rx="12" fill="#F8F5FC" stroke="#E1D8EE"/>
       <circle cx="715" cy="97" r="7" fill="#5B2C83" />
       <text x="732" y="102" font-size="15" fill="#2F1D4A" font-weight="600">KTE</text>
@@ -1833,7 +2015,10 @@ def render_radar_svg(dims: Dict[str, Dict[str, float]]):
       <text x="715" y="148" font-size="11" fill="#6D5B88">Skála: 1-10</text>
     </svg>
     """
-    components.html(svg, height=height + 10)
+
+
+def render_radar_svg(dims: Dict[str, Dict[str, float]]):
+    components.html(get_radar_svg(dims), height=770)
 
 
 # =========================================================
@@ -2476,7 +2661,7 @@ if step == "4. Export Prep":
         md_export = build_markdown_export(package)
         json_export = json.dumps(package, ensure_ascii=False, indent=2)
         pdf_export = build_pdf_export_bytes(package)
-        html_export = f"""<html><head><meta charset='utf-8'><title>Tactical Briefing</title></head><body><pre style='white-space: pre-wrap; font-family: Arial, sans-serif;'>{md_export}</pre></body></html>"""
+        html_export = build_html_export(package)
 
         st.subheader("Jelenlegi végtermék preview")
         preview_tab, md_tab, json_tab = st.tabs(["Deck preview", "Markdown", "JSON / letöltések"])
