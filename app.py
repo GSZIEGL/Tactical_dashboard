@@ -29,6 +29,8 @@ try:
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.units import mm
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, Image
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.utils import ImageReader, simpleSplit
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
 except Exception:
@@ -1890,135 +1892,189 @@ def build_html_export(package: Dict[str, object]) -> str:
     </body></html>"""
 
 
+
+def _pdf_draw_page_bg(c, width, height, title):
+    c.setFillColor(colors.HexColor("#F6F0FB"))
+    c.rect(0, 0, width, height, stroke=0, fill=1)
+    c.setFillColor(colors.HexColor("#E9DDF6"))
+    c.roundRect(16, height - 92, width - 32, 64, 18, stroke=0, fill=1)
+    c.setFillColor(colors.HexColor("#5B2C83"))
+    c.circle(42, height - 60, 18, stroke=0, fill=1)
+    c.setFillColor(colors.white)
+    c.setFont(PDF_FONT_BOLD_NAME, 12)
+    c.drawCentredString(42, height - 64, "KTE")
+    c.setFillColor(colors.HexColor("#2F1D4A"))
+    c.setFont(PDF_FONT_BOLD_NAME, 22)
+    c.drawString(70, height - 54, title)
+    c.setFillColor(colors.HexColor("#6E5A87"))
+    c.setFont(PDF_FONT_NAME, 10)
+    c.drawString(70, height - 72, "Adatalapú briefing · 7 dimenzió · 9 stratégia")
+    c.setFillColor(colors.HexColor("#D8C7EB"))
+    c.circle(width - 38, height - 48, 8, stroke=0, fill=1)
+    c.circle(width - 62, height - 72, 5, stroke=0, fill=1)
+
+
+def _pdf_draw_wrapped(c, text, x, y, width, font_name=None, font_size=10.5, color="#2F1D4A", leading=14, bullet=False, max_lines=None):
+    if not text:
+        return y
+    font_name = font_name or PDF_FONT_NAME
+    c.setFillColor(colors.HexColor(color))
+    c.setFont(font_name, font_size)
+    lines = []
+    for raw in str(text).replace("\r", "").split("\n"):
+        raw = raw.strip()
+        if not raw:
+            lines.append("")
+            continue
+        wrapped = simpleSplit(raw, font_name, font_size, width - (10 if bullet else 0))
+        if bullet and wrapped:
+            lines.append("• " + wrapped[0])
+            lines.extend(["  " + w for w in wrapped[1:]])
+        else:
+            lines.extend(wrapped or [raw])
+    if max_lines is not None:
+        lines = lines[:max_lines]
+    text_obj = c.beginText(x, y)
+    text_obj.setFont(font_name, font_size)
+    text_obj.setLeading(leading)
+    text_obj.setFillColor(colors.HexColor(color))
+    for ln in lines:
+        text_obj.textLine(ln)
+    c.drawText(text_obj)
+    return y - leading * len(lines)
+
+def _pdf_draw_card(c, x, y_top, w, h, title, body_lines, fill="#FFFFFF"):
+    c.setFillColor(colors.HexColor(fill))
+    c.roundRect(x, y_top - h, w, h, 14, stroke=0, fill=1)
+    c.setFillColor(colors.HexColor("#2F1D4A"))
+    c.setFont(PDF_FONT_BOLD_NAME, 12)
+    c.drawString(x + 12, y_top - 20, title)
+    yy = y_top - 38
+    for item in body_lines:
+        yy = _pdf_draw_wrapped(c, item, x + 12, yy, w - 24, font_size=10.0, color="#35254E", leading=12.5, bullet=True) - 2
+        if yy < y_top - h + 18:
+            break
+
+
+def _pdf_draw_image_fit(c, png_bytes, x, y_bottom, w, h):
+    c.setFillColor(colors.white)
+    c.roundRect(x, y_bottom, w, h, 14, stroke=0, fill=1)
+    if not png_bytes:
+        c.setFillColor(colors.HexColor("#7E6A98"))
+        c.setFont(PDF_FONT_NAME, 11)
+        c.drawCentredString(x + w/2, y_bottom + h/2, "A diagram ebben a környezetben nem renderelhető.")
+        return
+    try:
+        img = ImageReader(io.BytesIO(png_bytes))
+        iw, ih = img.getSize()
+        scale = min(w / iw, h / ih)
+        dw, dh = iw * scale, ih * scale
+        dx = x + (w - dw) / 2
+        dy = y_bottom + (h - dh) / 2
+        c.drawImage(img, dx, dy, width=dw, height=dh, preserveAspectRatio=True, mask='auto')
+    except Exception:
+        c.setFillColor(colors.HexColor("#7E6A98"))
+        c.setFont(PDF_FONT_NAME, 11)
+        c.drawCentredString(x + w/2, y_bottom + h/2, "A diagram betöltése nem sikerült.")
+
 def build_pdf_export_bytes(package: Dict[str, object]) -> bytes:
     if not REPORTLAB_AVAILABLE:
-        content = build_markdown_export(package)
-        return content.encode("utf-8")
+        return build_html_export(package).encode("utf-8")
+    ensure_pdf_font()
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=A4,
-        leftMargin=12 * mm,
-        rightMargin=12 * mm,
-        topMargin=12 * mm,
-        bottomMargin=12 * mm,
-    )
-    pdf_font_name = ensure_pdf_font()
-    styles = getSampleStyleSheet()
-    title_style = styles["Title"]
-    heading = styles["Heading2"]
-    body = styles["BodyText"]
-    body.spaceAfter = 6
-    for style in [title_style, heading, body]:
-        style.fontName = pdf_font_name
-    title_style.textColor = colors.HexColor("#2F1D4A")
-    heading.textColor = colors.HexColor("#2F1D4A")
+    c = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
+    margin = 24
 
-    story = []
     p1 = package["page_1_onepager"]
     p3 = package["page_3_tactical_overview"]
-
-    story.append(Paragraph("Taktikai döntéselőkészítő export", title_style))
-    story.append(Spacer(1, 4))
-    story.append(Paragraph(get_methodology_summary(), body))
-    story.append(Spacer(1, 8))
-
-    meta = [
-        ["A terv", label_strategy(str(p1["plan_a"]))],
-        ["B terv", label_strategy(str(p1["plan_b"]))],
-        ["Arány", str(p1["plan_split"])],
-        ["Fókusz", format_focus_areas(package.get("coach_controls", {}).get("focus_areas", []))],
-    ]
-    tbl = Table(meta, colWidths=[35 * mm, 140 * mm])
-    tbl.setStyle(TableStyle([
-        ("GRID", (0, 0), (-1, -1), 0.4, colors.lightgrey),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("FONTNAME", (0, 0), (-1, -1), pdf_font_name),
-    ]))
-    story.append(tbl)
-    story.append(Spacer(1, 10))
-
-    story.append(Paragraph("Teljes konklúzió", heading))
-    for item in build_full_conclusion(package):
-        story.append(Paragraph(f"- {item}", body))
-    story.append(PageBreak())
-
-    max_w = doc.width
-    charts = [
-        ("7 dimenziós radar", get_radar_png_bytes(p1["dimensions"]), 170 * mm),
-        ("Dimenzió-összehasonlítás", get_bar_chart_png_bytes(p1["dimensions"]), 110 * mm),
-        ("Stratégiai térkép", get_strategy_map_png_bytes(p1["plan_a"], p1["plan_b"]), 120 * mm),
-    ]
-    for idx, (title, png_bytes, max_h) in enumerate(charts):
-        story.append(Paragraph(title, heading))
-        flowable = build_reportlab_png_flowable(png_bytes, max_w, max_h)
-        if flowable is not None:
-            story.append(flowable)
-        else:
-            story.append(Paragraph("[Diagram nem renderelhető ebben a környezetben]", body))
-        if idx < len(charts) - 1:
-            story.append(PageBreak())
-    story.append(PageBreak())
-
-    story.append(Paragraph("7 dimenziós összehasonlítás", heading))
-    dim_rows = [["Dimenzió", "KTE", "ELL", "Edge"]]
-    for dim, vals in p1["dimensions"].items():
-        dim_rows.append([dim, str(vals["KTE"]), str(vals["ELL"]), str(vals["Edge"])])
-    dt = Table(dim_rows, colWidths=[55 * mm, 20 * mm, 20 * mm, 20 * mm])
-    dt.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EEE8F5")),
-        ("GRID", (0, 0), (-1, -1), 0.4, colors.lightgrey),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("FONTNAME", (0, 0), (-1, 0), PDF_FONT_BOLD_NAME),
-        ("FONTNAME", (0, 1), (-1, -1), pdf_font_name),
-        ("FONTSIZE", (0, 0), (-1, -1), 9),
-    ]))
-    story.append(dt)
-    story.append(Spacer(1, 10))
-
-    for title, value in [
-        ("Ellenfél profil", p1["opponent_profile"]),
-        ("Saját állapot", p1["own_state"]),
-        ("Ellenfél-DNS", p3["opponent_dna"]),
-        ("Konklúzió", p1["conclusion"]),
-    ]:
-        story.append(Paragraph(title, heading))
-        story.append(Paragraph(str(value).replace("\n", "<br/>"), body))
-        story.append(Spacer(1, 4))
-
-    story.append(Paragraph("3 kulcs", heading))
-    for item in p1["three_keys"]:
-        story.append(Paragraph(f"- {item}", body))
-
-    story.append(Spacer(1, 4))
-    story.append(Paragraph("Kockázatok", heading))
-    for item in p1["risks"]:
-        story.append(Paragraph(f"- {item}", body))
-
-    story.append(Spacer(1, 4))
-    story.append(Paragraph("Várható meccsdinamika", heading))
-    for item in p3["match_dynamics"]:
-        story.append(Paragraph(f"- {item}", body))
-
-    story.append(Spacer(1, 4))
-    story.append(Paragraph("Legveszélyesebb ellenfél-játékosok", heading))
-    danger = summarize_danger_players(p3.get("key_player_threats", {}))
-    if danger:
-        for item in danger:
-            story.append(Paragraph(f"- {item}", body))
-    else:
-        story.append(Paragraph("- nincs kiemelt veszélyforrás azonosítva", body))
-
+    coach = package.get("coach_controls", {}) or {}
     ds = package.get("decision_support", {}) or {}
-    if ds.get("has_manual_intervention"):
-        story.append(Spacer(1, 4))
-        story.append(Paragraph("Edzői finomhangolás hatása", heading))
-        if ds.get("executive_summary"):
-            story.append(Paragraph(str(ds.get("executive_summary")), body))
-        for item in ds.get("recommendation", [])[:4]:
-            story.append(Paragraph(f"- {item}", body))
+    danger = summarize_danger_players(p3.get("key_player_threats", {}))
+    final_summary = build_full_conclusion(package)
 
-    doc.build(story)
+    _pdf_draw_page_bg(c, width, height, "Taktikai döntéselőkészítő")
+    c.setFillColor(colors.white)
+    c.roundRect(margin, height - 310, width - 2 * margin, 178, 18, stroke=0, fill=1)
+    c.setFillColor(colors.HexColor("#5B2C83"))
+    c.setFont(PDF_FONT_BOLD_NAME, 14)
+    c.drawString(margin + 16, height - 156, "Metodika")
+    _pdf_draw_wrapped(c, get_methodology_summary(), margin + 16, height - 178, width - 2 * margin - 32, font_size=10.5, color="#35254E", leading=14, max_lines=8)
+
+    c.setFillColor(colors.white)
+    c.roundRect(margin, height - 508, width - 2 * margin, 176, 18, stroke=0, fill=1)
+    c.setFillColor(colors.HexColor("#2F1D4A"))
+    c.setFont(PDF_FONT_BOLD_NAME, 14)
+    c.drawString(margin + 16, height - 354, "Vezetői összefoglaló")
+    yy = height - 376
+    for item in final_summary[:6]:
+        yy = _pdf_draw_wrapped(c, item, margin + 16, yy, width - 2 * margin - 32, font_size=10.8, color="#35254E", leading=15, bullet=True) - 2
+    if ds.get("has_manual_intervention") and ds.get("executive_summary"):
+        c.setFillColor(colors.HexColor("#F1E8FA"))
+        c.roundRect(margin, 54, width - 2 * margin, 76, 16, stroke=0, fill=1)
+        c.setFillColor(colors.HexColor("#2F1D4A"))
+        c.setFont(PDF_FONT_BOLD_NAME, 12)
+        c.drawString(margin + 14, 108, "Edzői finomhangolás")
+        _pdf_draw_wrapped(c, ds.get("executive_summary", ""), margin + 14, 90, width - 2 * margin - 28, font_size=9.6, color="#4B3A66", leading=12, max_lines=4)
+    c.showPage()
+
+    for title, png in [
+        ("7 dimenziós radar", get_radar_png_bytes(p1["dimensions"])),
+        ("Dimenzió-összehasonlítás", get_bar_chart_png_bytes(p1["dimensions"])),
+        ("Stratégiai térkép", get_strategy_map_png_bytes(p1["plan_a"], p1["plan_b"])),
+    ]:
+        _pdf_draw_page_bg(c, width, height, title)
+        _pdf_draw_image_fit(c, png, 30, 95, width - 60, height - 160)
+        c.showPage()
+
+    _pdf_draw_page_bg(c, width, height, "Matchup-kép és kulcspontok")
+    half = (width - 3 * margin) / 2
+    _pdf_draw_card(c, margin, height - 110, half, 150, "Terv és fókusz", [
+        f"A terv: {label_strategy(str(p1['plan_a']))}",
+        f"B terv: {label_strategy(str(p1['plan_b']))}",
+        f"Arány: {p1['plan_split']}",
+        f"Meccsfókusz: {format_focus_areas(coach.get('focus_areas', []))}",
+        f"Labdakihozatal: {coach.get('build_up_solution', '-')}",
+        f"Védelmi blokk: {coach.get('defensive_block', '-')}",
+    ])
+    _pdf_draw_card(c, margin * 2 + half, height - 110, half, 150, "Szöveges olvasat", [
+        p1.get('opponent_profile', ''),
+        p1.get('own_state', ''),
+        p3.get('opponent_dna', ''),
+        p1.get('conclusion', ''),
+    ])
+    _pdf_draw_card(c, margin, height - 280, half, 220, "3 kulcs és kockázatok", p1.get('three_keys', [])[:3] + p1.get('risks', [])[:3])
+    _pdf_draw_card(c, margin * 2 + half, height - 280, half, 220, "Meccsdinamika és veszélyforrás", p3.get('match_dynamics', [])[:3] + danger[:4])
+    c.showPage()
+
+    _pdf_draw_page_bg(c, width, height, "7 dimenziós összkép")
+    c.setFillColor(colors.white)
+    c.roundRect(margin, 88, width - 2 * margin, height - 200, 18, stroke=0, fill=1)
+    table_x = margin + 10
+    table_y = height - 130
+    col_w = [180, 70, 90, 90]
+    row_h = 24
+    headers = ["Dimenzió", "KTE", "Ellenfél", "Különbség"]
+    c.setFillColor(colors.HexColor("#EEE8F5"))
+    c.roundRect(table_x, table_y - row_h, sum(col_w), row_h, 8, stroke=0, fill=1)
+    c.setFillColor(colors.HexColor("#2F1D4A"))
+    c.setFont(PDF_FONT_BOLD_NAME, 11)
+    xx = table_x + 8
+    for i, htxt in enumerate(headers):
+        c.drawString(xx, table_y - 16, htxt)
+        xx += col_w[i]
+    c.setFont(PDF_FONT_NAME, 10.5)
+    y = table_y - row_h - 4
+    for idx, (dim, vals) in enumerate(p1["dimensions"].items()):
+        c.setFillColor(colors.HexColor("#F9F6FD" if idx % 2 == 0 else "#FFFFFF"))
+        c.rect(table_x, y - row_h + 4, sum(col_w), row_h, stroke=0, fill=1)
+        c.setFillColor(colors.HexColor("#35254E"))
+        xx = table_x + 8
+        for i, cell in enumerate([dim, str(vals["KTE"]), str(vals["ELL"]), str(vals["Edge"])]):
+            c.drawString(xx, y - 12, cell)
+            xx += col_w[i]
+        y -= row_h
+    c.save()
     pdf = buffer.getvalue()
     buffer.close()
     return pdf
