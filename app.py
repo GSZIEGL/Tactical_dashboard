@@ -1469,11 +1469,11 @@ Ez az alkalmazás **adatalapú taktikai döntéselőkészítő**, amely a match 
 
 def get_methodology_summary() -> str:
     return (
-        "Ez az alkalmazás adatalapú taktikai döntéselőkészítő: a match Excel, player Excel és célzott PDF-scouting inputok alapján épít matchup-profilt. "
-        "A két csapatot 7 taktikai dimenzió mentén értékeli — letámadás, labdakihozatal, átmenetek, támadó játék, pontrúgások, labdabirtoklás, lövésprofil — majd ezeket a 9 alapstratégia egyikéhez vagy kombinációjához illeszti. "
-        "A 9 stratégia jelentése röviden: KON kontra mély blokkból, GAT gyors átmenet, BAT középső blokk + átmenet, KIE kiegyensúlyozott, PRS presszing + átmenet, MLT magas letámadás, DOM dominancia, POZ pozíciós támadás, LAB mélyebb labdatartás. "
-        "A Plan A / Plan B logika ezért nem megérzésre, hanem összevethető mutatókra és matchup-vizsgálatra épül. "
-        "A rendszerben MI-alapú strukturálás és szabályozott következtetési réteg is dolgozik, miközben a coach-felületen a saját szakmai finomhangolásod is megjelenik."
+        "Ez a briefing egy adatalapú taktikai döntéselőkészítő rendszerből készül, amely a match Excel, a player Excel és a célzott PDF-scouting inputok alapján épít pontos matchup-profilt. "
+        "A modell 7 dimenzióban hasonlítja össze a két csapatot: letámadás, labdakihozatal, átmenetek, támadó játék, pontrúgások, labdabirtoklás és lövésprofil. "
+        "Ezt a képet 9 alapstratégiára vetítjük: KON kontra mély blokkból, GAT gyors átmenet, BAT középső blokk + átmenet, KIE kiegyensúlyozott, PRS presszing + átmenet, MLT magas letámadás, DOM dominancia, POZ pozíciós támadás és LAB mélyebb labdatartás. "
+        "A Plan A és Plan B ezért nem megérzésből születik, hanem egzakt statisztikai matchup-vizsgálatból, MI-alapú strukturálásból és a saját szakmai modellezésedből. "
+        "Az eredmény egy gyorsan értelmezhető, edzői döntést támogató összkép, nem puszta tipp."
     )
 
 
@@ -2785,22 +2785,36 @@ for k, v in defaults.items():
 
 st.markdown("""
 <style>
-.stApp { background: #FAFBFD; color:#18212F; }
-.kte-hero { display:flex; align-items:center; gap:14px; background:#FFFFFF; color:#18212F; padding:16px 18px; border-radius:18px; margin-bottom:14px; border:1px solid #E6EAF2; box-shadow:0 8px 20px rgba(16,24,40,.05); }
-.kte-badge { width:52px; height:52px; border-radius:50%; background:linear-gradient(135deg,#F3F0FF,#E6E0FF); color:#4B2E83; border:1px solid #D8CEF8; display:flex; align-items:center; justify-content:center; font-weight:800; }
-.block-container { padding-top: 1.2rem; }
+.stApp { background: linear-gradient(180deg, #F6F1FF 0%, #F9F7FD 52%, #FFFFFF 100%); color:#121826; }
+.kte-hero { display:flex; align-items:center; gap:14px; background:rgba(255,255,255,.92); color:#18212F; padding:16px 18px; border-radius:20px; margin-bottom:16px; border:1px solid #E7DEF8; box-shadow:0 10px 28px rgba(76,46,131,.08); }
+.kte-badge { width:52px; height:52px; border-radius:50%; background:linear-gradient(135deg,#F3EFFF,#E7DEFF); color:#5A38A6; border:1px solid #D7C7FB; display:flex; align-items:center; justify-content:center; font-weight:800; }
+.block-container { padding-top: 1.25rem; }
 [data-testid="stSidebar"] { background:#FFFFFF; border-right:1px solid #E6EAF2; }
 [data-testid="stSidebar"] * { color:#18212F !important; }
 h1,h2,h3,h4,p,li,span,label,div { color:#18212F; }
-.summary-card { background:#FFFFFF; border:1px solid #E6EAF2; border-radius:18px; padding:16px; box-shadow:0 10px 24px rgba(16,24,40,.04); margin-bottom:14px; }
-.summary-kpi { background:#F8FAFC; border:1px solid #E7EEF7; border-radius:16px; padding:14px; }
-.summary-kpi-title { font-size:.85rem; color:#475467; }
-.summary-kpi-value { font-size:1.35rem; font-weight:800; color:#4B2E83; }
-.summary-note { color:#475467; font-size:.94rem; }
+.summary-shell { margin-top: .65rem; }
+.summary-card { background:rgba(255,255,255,.97); border:1px solid #E7DEF8; border-radius:20px; padding:16px 18px; box-shadow:0 12px 28px rgba(76,46,131,.07); margin-bottom:12px; }
+.summary-kpi { display:grid; grid-template-columns:1fr 1fr .9fr; gap:12px; background:transparent; border:none; padding:0; margin-bottom:12px; }
+.summary-kpi .k { background:rgba(255,255,255,.97); border:1px solid #E7DEF8; border-radius:20px; padding:14px 16px; box-shadow:0 10px 24px rgba(76,46,131,.06); min-height:108px; }
+.summary-kpi .n { font-size:1.5rem; font-weight:800; color:#4B2E83; line-height:1.05; margin:3px 0 6px 0; }
+.summary-note { color:#5B6474; font-size:.92rem; line-height:1.35; }
+.summary-title { margin-top: .9rem; margin-bottom: .7rem; }
+.summary-grid-tight { display:grid; grid-template-columns:1.2fr .85fr; gap:12px; }
+.summary-micro { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+.summary-pill { background:#F2ECFF; color:#4B2E83; border:1px solid #DED1FF; padding:5px 10px; border-radius:999px; font-size:.82rem; font-weight:600; }
+.summary-card h3, .summary-card h4 { margin-bottom:.35rem; }
+@media (max-width: 980px) {
+  .summary-kpi { grid-template-columns:1fr; }
+  .summary-grid-tight { grid-template-columns:1fr; }
+}
+@media print {
+  html, body, [data-testid="stAppViewContainer"], .stApp { background:#F6F1FF !important; color:#111111 !important; }
+  .kte-hero, .summary-card, .summary-kpi .k { background:#FFFFFF !important; box-shadow:none !important; }
+}
 </style>
 """, unsafe_allow_html=True)
 st.markdown("""<div class='kte-hero'><div class='kte-badge'>KTE</div><div><div style='font-size:1.55rem;font-weight:800;color:#18212F;'>Taktikai döntéselőkészítő ⚽</div><div style='opacity:.9;color:#475467;'>Adatalapú briefing • 7 dimenzió • 9 stratégia</div></div></div>""", unsafe_allow_html=True)
-st.sidebar.caption("D/P = Direkt / Presszing")
+st.sidebar.caption("A rövidítések a stratégiai paletta elemeit jelölik")
 
 step = st.sidebar.radio(
     "Lépés",
@@ -3329,39 +3343,65 @@ if step == "3. Debug":
 def render_summary_page(package: Dict[str, object]):
     p1 = package["page_1_onepager"]
     p3 = package["page_3_tactical_overview"]
-    ds = package.get("decision_support", {}) or {}
     dims = p1.get("dimensions", {})
     danger = summarize_danger_players(p3.get("key_player_threats", {}))
     conclusion_lines = build_full_conclusion(package)
+    mode_label = "korrigált döntési profil" if p1.get("dimension_mode") == "adjusted" else "alap matchup-profil"
 
     st.markdown("<div class='summary-shell'>", unsafe_allow_html=True)
-    st.markdown("### Vezetői összegző oldal")
-    st.caption("Ez az oldal képernyőképezésre, gyors edzői áttekintésre és meccs előtti egyoldalas összefoglalóra van optimalizálva.")
+    st.markdown("<div class='summary-title'></div>", unsafe_allow_html=True)
+    st.markdown("### Vezetői összegző")
 
     st.markdown(f"""
     <div class='summary-kpi'>
-        <div class='k'><div class='summary-note'>Plan A</div><div class='n'>{pdf_safe_text(p1.get('plan_a','-'))}</div><div class='summary-note'>{label_strategy(p1.get('plan_a',''))}</div></div>
-        <div class='k'><div class='summary-note'>Plan B</div><div class='n'>{pdf_safe_text(p1.get('plan_b','-'))}</div><div class='summary-note'>{label_strategy(p1.get('plan_b',''))}</div></div>
-        <div class='k'><div class='summary-note'>Arány</div><div class='n'>{pdf_safe_text(p1.get('plan_split','-'))}</div><div class='summary-note'>{'coach-hatással korrigált' if p1.get('dimension_mode') == 'adjusted' else 'alap matchup profil'}</div></div>
+        <div class='k'>
+            <div class='summary-note'>⚔️ Plan A</div>
+            <div class='n'>{pdf_safe_text(p1.get('plan_a','-'))}</div>
+            <div class='summary-note'>{label_strategy(p1.get('plan_a',''))}</div>
+        </div>
+        <div class='k'>
+            <div class='summary-note'>🛡️ Plan B</div>
+            <div class='n'>{pdf_safe_text(p1.get('plan_b','-'))}</div>
+            <div class='summary-note'>{label_strategy(p1.get('plan_b',''))}</div>
+        </div>
+        <div class='k'>
+            <div class='summary-note'>⚖️ Arány</div>
+            <div class='n'>{pdf_safe_text(p1.get('plan_split','-'))}</div>
+            <div class='summary-note'>{mode_label}</div>
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
-    left, right = st.columns([1.2, 0.8])
-    with left:
+    top_left, top_right = st.columns([1.25, 0.9])
+    with top_left:
         st.markdown("<div class='summary-card'>", unsafe_allow_html=True)
-        st.markdown("#### Teljes konklúzió")
-        for line in conclusion_lines[:6]:
+        st.markdown("#### 🎯 Teljes konklúzió")
+        for line in conclusion_lines[:5]:
             st.write(f"• {line}")
+        st.markdown("<div class='summary-micro'>", unsafe_allow_html=True)
+        st.markdown(f"<span class='summary-pill'>Plan A: {pdf_safe_text(p1.get('plan_a','-'))}</span><span class='summary-pill'>Plan B: {pdf_safe_text(p1.get('plan_b','-'))}</span><span class='summary-pill'>Arány: {pdf_safe_text(p1.get('plan_split','-'))}</span>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
+    with top_right:
         st.markdown("<div class='summary-card'>", unsafe_allow_html=True)
-        st.markdown("#### Módszertan röviden")
+        st.markdown("#### ⚠️ 3 kulcs és fő kockázatok")
+        for item in p1.get('three_keys', [])[:3]:
+            st.write(f"• Kulcs: {item}")
+        for item in p1.get('risks', [])[:2]:
+            st.write(f"• Kockázat: {item}")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    info_left, info_right = st.columns([1.05, 0.95])
+    with info_left:
+        st.markdown("<div class='summary-card'>", unsafe_allow_html=True)
+        st.markdown("#### 🧠 Módszertan röviden")
         st.write(get_methodology_summary())
         st.markdown("</div>", unsafe_allow_html=True)
 
-    with right:
+    with info_right:
         st.markdown("<div class='summary-card'>", unsafe_allow_html=True)
-        st.markdown("#### Fix ellenfél-veszélyek")
+        st.markdown("#### 🚨 Legveszélyesebb ellenfél-játékosok")
         if danger:
             for item in danger[:3]:
                 st.write(f"• {item}")
@@ -3369,34 +3409,21 @@ def render_summary_page(package: Dict[str, object]):
             st.write("Nincs elérhető játékosveszély-lista.")
         st.markdown("</div>", unsafe_allow_html=True)
 
-        st.markdown("<div class='summary-card'>", unsafe_allow_html=True)
-        st.markdown("#### 3 kulcs és fő kockázatok")
-        for item in p1.get('three_keys', [])[:3]:
-            st.write(f"• Kulcs: {item}")
-        for item in p1.get('risks', [])[:3]:
-            st.write(f"• Kockázat: {item}")
-        st.markdown("</div>", unsafe_allow_html=True)
-
-        st.markdown("<div class='summary-card'>", unsafe_allow_html=True)
-        st.markdown("#### Edzői finomhangolás")
-        if ds.get("has_manual_intervention") and ds.get("executive_summary"):
-            st.write(ds.get("executive_summary"))
-        else:
-            st.write("Nincs kézi beavatkozás: jelenleg az alap adatalapú matchup-javaslat érvényes.")
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown("#### Vizualizációk")
-    c1, c2 = st.columns(2)
+    st.markdown("#### 📊 Vizualizációk")
+    c1, c2 = st.columns([1, 1])
     with c1:
         st.markdown("<div class='summary-card'>", unsafe_allow_html=True)
+        st.markdown("##### 7 dimenziós profil")
         render_radar_svg(dims)
         st.markdown("</div>", unsafe_allow_html=True)
     with c2:
         st.markdown("<div class='summary-card'>", unsafe_allow_html=True)
+        st.markdown("##### Dimenziók összehasonlítása")
         render_bar_chart(dims)
         st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("<div class='summary-card'>", unsafe_allow_html=True)
+    st.markdown("##### 9 stratégia térképe")
     render_strategy_map(p1.get("plan_a"), p1.get("plan_b"))
     st.markdown("</div>", unsafe_allow_html=True)
 
