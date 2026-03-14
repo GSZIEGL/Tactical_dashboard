@@ -384,11 +384,11 @@ def apply_linked_coach_controls(model_code: str):
     st.session_state["coach_match_scenario"] = linked["match_scenario"]
     st.session_state["coach_focus_areas"] = linked["focus_areas"]
 
-def render_strategy_map(selected_a: Optional[str] = None, selected_b: Optional[str] = None):
+def render_strategy_map(selected_a: Optional[str] = None, selected_b: Optional[str] = None, height: int = 430):
     rows = strategy_scatter_data(selected_a, selected_b)
     spec = {
         "width": "container",
-        "height": 430,
+        "height": height,
         "data": {"values": rows},
         "layer": [
             {
@@ -2598,7 +2598,7 @@ def run_engine(
 # CHARTS
 # =========================================================
 
-def render_bar_chart(dims: Dict[str, Dict[str, float]]):
+def render_bar_chart(dims: Dict[str, Dict[str, float]], height: int = 360):
     rows = []
     for dim, vals in dims.items():
         rows.append({"Dimenzió": dim, "Csapat": "KTE", "Érték": vals["KTE"]})
@@ -2612,7 +2612,7 @@ def render_bar_chart(dims: Dict[str, Dict[str, float]]):
         color="Csapat:N",
         xOffset="Csapat:N",
         tooltip=["Dimenzió", "Csapat", "Érték"],
-    ).properties(height=360)
+    ).properties(height=height)
 
     st.altair_chart(chart, use_container_width=True)
 
@@ -2714,8 +2714,8 @@ def get_radar_svg(dims: Dict[str, Dict[str, float]]) -> str:
     """
 
 
-def render_radar_svg(dims: Dict[str, Dict[str, float]]):
-    components.html(get_radar_svg(dims), height=770)
+def render_radar_svg(dims: Dict[str, Dict[str, float]], height: int = 770):
+    components.html(get_radar_svg(dims), height=height)
 
 
 # =========================================================
@@ -2801,6 +2801,8 @@ h1,h2,h3,h4,p,li,span,label,div { color:#18212F; }
 .summary-micro { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
 .summary-pill { background:#F2ECFF; color:#4B2E83; border:1px solid #DED1FF; padding:5px 10px; border-radius:999px; font-size:.82rem; font-weight:600; }
 .print-keep-together { break-inside: avoid; page-break-inside: avoid; margin-bottom: 10px; }
+.summary-page-break { break-before: page; page-break-before: always; margin-top: 0; }
+.summary-avoid-break { break-inside: avoid; page-break-inside: avoid; }
 @media (max-width: 980px) {
   .summary-kpi { grid-template-columns:1fr; }
   .summary-grid-tight { grid-template-columns:1fr; }
@@ -2808,7 +2810,8 @@ h1,h2,h3,h4,p,li,span,label,div { color:#18212F; }
 @media print {
   html, body, [data-testid="stAppViewContainer"], .stApp { background:#F6F1FF !important; color:#111111 !important; }
   .kte-hero, .summary-kpi .k { background:#FFFFFF !important; box-shadow:none !important; }
-  .print-keep-together { break-inside: avoid; page-break-inside: avoid; }
+  .print-keep-together, .summary-avoid-break { break-inside: avoid; page-break-inside: avoid; }
+  .summary-page-break { break-before: page; page-break-before: always; }
   h1, h2, h3, h4, h5 { break-after: avoid; page-break-after: avoid; }
 }
 </style>
@@ -3349,7 +3352,7 @@ def render_summary_page(package: Dict[str, object]):
     mode_label = "korrigált döntési profil" if p1.get("dimension_mode") == "adjusted" else "alap matchup-profil"
 
     st.markdown("<div class='summary-shell'>", unsafe_allow_html=True)
-    st.markdown("<div style='height:0.45rem;'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:0.8rem;'></div>", unsafe_allow_html=True)
     st.markdown("### Vezetői összegző")
 
     st.markdown(f"""
@@ -3372,7 +3375,7 @@ def render_summary_page(package: Dict[str, object]):
     </div>
     """, unsafe_allow_html=True)
 
-    top_left, top_right = st.columns([1.25, 0.9])
+    top_left, top_right = st.columns([1.18, 0.82])
     with top_left:
         st.subheader("🎯 Teljes konklúzió")
         for line in conclusion_lines[:5]:
@@ -3390,13 +3393,7 @@ def render_summary_page(package: Dict[str, object]):
             st.write(f"• Kulcs: {item}")
         for item in p1.get('risks', [])[:2]:
             st.write(f"• Kockázat: {item}")
-
-    info_left, info_right = st.columns([1.05, 0.95])
-    with info_left:
-        st.subheader("🧠 Módszertan röviden")
-        st.write(get_methodology_summary())
-
-    with info_right:
+        st.markdown("<div style='height:0.35rem;'></div>", unsafe_allow_html=True)
         st.subheader("🚨 Legveszélyesebb ellenfél-játékosok")
         if danger:
             for item in danger[:3]:
@@ -3404,20 +3401,22 @@ def render_summary_page(package: Dict[str, object]):
         else:
             st.write("Nincs elérhető játékosveszély-lista.")
 
+    st.markdown("<div class='summary-page-break summary-avoid-break'>", unsafe_allow_html=True)
     st.markdown("#### 📊 Vizualizációk")
-    st.markdown("<div class='print-keep-together'>", unsafe_allow_html=True)
     c1, c2 = st.columns([1, 1])
     with c1:
         st.markdown("##### 7 dimenziós profil")
-        render_radar_svg(dims)
+        render_radar_svg(dims, height=520)
     with c2:
         st.markdown("##### Dimenziók összehasonlítása")
-        render_bar_chart(dims)
+        render_bar_chart(dims, height=300)
+    st.markdown("##### 9 stratégia térképe")
+    render_strategy_map(p1.get("plan_a"), p1.get("plan_b"), height=260)
     st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("<div class='print-keep-together'>", unsafe_allow_html=True)
-    st.markdown("##### 9 stratégia térképe")
-    render_strategy_map(p1.get("plan_a"), p1.get("plan_b"))
+    st.markdown("<div class='summary-page-break summary-avoid-break'>", unsafe_allow_html=True)
+    st.subheader("🧠 Módszertan röviden")
+    st.write(get_methodology_summary())
     st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("</div>", unsafe_allow_html=True)
