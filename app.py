@@ -1530,6 +1530,103 @@ def build_markdown_export(package: Dict[str, object]) -> str:
     return "\n".join(md)
 
 
+
+
+def control_status_rows(linked_mode: bool) -> List[dict]:
+    auto = "Automatikus a játékmodellből" if linked_mode else "Kézi"
+    return [
+        {"Elem": "Elsődleges játékmodell", "Állapot": "Szerkeszthető", "Logika": "Fő taktikai driver"},
+        {"Elem": "Alternatív játékmodell", "Állapot": "Szerkeszthető", "Logika": "Plan B"},
+        {"Elem": "Meccskép prioritás", "Állapot": "Fixált" if linked_mode else "Szerkeszthető", "Logika": auto},
+        {"Elem": "Labdakihozatal", "Állapot": "Fixált" if linked_mode else "Szerkeszthető", "Logika": auto},
+        {"Elem": "Védelmi blokk", "Állapot": "Fixált" if linked_mode else "Szerkeszthető", "Logika": auto},
+        {"Elem": "Meccsdinamika", "Állapot": "Fixált" if linked_mode else "Szerkeszthető", "Logika": auto},
+        {"Elem": "Pressing fókuszterület", "Állapot": "Szerkeszthető", "Logika": "Mindig külön finomhangolható"},
+        {"Elem": "Pontrúgás prioritás", "Állapot": "Szerkeszthető", "Logika": "Mindig külön finomhangolható"},
+        {"Elem": "Fő kockázat prioritások", "Állapot": "Szerkeszthető", "Logika": "Coach override"},
+        {"Elem": "Kulcsjátékos fókusz", "Állapot": "Fix", "Logika": "Parser-alapú ellenfél lista"},
+    ]
+
+
+def render_export_preview(package: Dict[str, object]):
+    p1 = package["page_1_onepager"]
+    p3 = package["page_3_tactical_overview"]
+    ds = package.get("decision_support", {}) or {}
+    coach = package.get("coach_controls", {}) or {}
+
+    top1, top2, top3 = st.columns([1.1, 1.1, 1])
+    with top1:
+        st.markdown("### Match plan")
+        st.metric("Plan A", p1["plan_a"])
+        st.metric("Plan B", p1["plan_b"])
+    with top2:
+        st.markdown("### Arány")
+        st.metric("Plan split", p1["plan_split"])
+        st.caption(f"Dimenzió mód: {p1.get('dimension_mode', 'base')}")
+    with top3:
+        st.markdown("### Coach mode")
+        st.write(f"- Build-up: {coach.get('build_up_solution', 'n.a.')}")
+        st.write(f"- Blokk: {coach.get('defensive_block', 'n.a.')}")
+        st.write(f"- Szenárió: {coach.get('match_scenario', 'n.a.')}")
+
+    st.markdown("### 7 dimenziós összkép")
+    dim_df = pd.DataFrame(p1["dimensions"]).T.reset_index().rename(columns={"index": "Dimenzió"})
+    st.dataframe(dim_df, use_container_width=True, hide_index=True)
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("### Ellenfél profil")
+        st.info(p1["opponent_profile"])
+        st.markdown("### Opponent DNA")
+        st.code(p3["opponent_dna"])
+    with c2:
+        st.markdown("### Saját állapot")
+        st.info(p1["own_state"])
+        st.markdown("### Konklúzió")
+        st.success(p1["conclusion"])
+
+    c3, c4, c5 = st.columns(3)
+    with c3:
+        st.markdown("### 3 kulcs")
+        for x in p1.get("three_keys", []):
+            st.write(f"- {x}")
+    with c4:
+        st.markdown("### Kockázatok")
+        for x in p1.get("risks", []):
+            st.write(f"- {x}")
+    with c5:
+        st.markdown("### Meccsdinamika")
+        for x in p3.get("match_dynamics", []):
+            st.write(f"- {x}")
+
+    st.markdown("### Fix ellenfél kulcsjátékosok")
+    key_groups = p3.get("key_player_threats", {})
+    kg1, kg2, kg3 = st.columns(3)
+    groups = list(key_groups.items())
+    for col, pair in zip([kg1, kg2, kg3], groups[:3]):
+        group_name, records = pair
+        with col:
+            st.markdown(f"**{group_name}**")
+            if records:
+                for r in records[:3]:
+                    st.write(f"- {r}")
+            else:
+                st.write("- n.a.")
+
+    if ds:
+        st.markdown("### Taktikai döntési blokk")
+        st.warning(ds.get("executive_summary", ""))
+        d1, d2 = st.columns(2)
+        with d1:
+            st.markdown("**Matchup notes**")
+            for x in ds.get("matchup_notes", []):
+                st.write(f"- {x}")
+        with d2:
+            st.markdown("**Vezetői javaslatok**")
+            for x in ds.get("recommendation", []):
+                st.write(f"- {x}")
+
+
 def run_engine(
     team_match_file,
     opp_match_file,
@@ -2026,6 +2123,9 @@ if step == "2. Review":
                     f"meccsdinamika = {linked_preview['match_scenario']}, fókusz = {', '.join(linked_preview['focus_areas'])}."
                 )
 
+            st.caption("Mi fix és mi szerkeszthető jelenleg")
+            st.dataframe(pd.DataFrame(control_status_rows(st.session_state.get("coach_link_controls", True))), use_container_width=True, hide_index=True)
+
             st.session_state["coach_focus_areas"] = st.multiselect(
                 "Meccskép prioritás",
                 options=["pressing", "build-up", "transition", "set pieces", "rest defense"],
@@ -2378,42 +2478,48 @@ if step == "4. Export Prep":
         pdf_export = build_pdf_export_bytes(package)
         html_export = f"""<html><head><meta charset='utf-8'><title>Tactical Briefing</title></head><body><pre style='white-space: pre-wrap; font-family: Arial, sans-serif;'>{md_export}</pre></body></html>"""
 
-        col1, col2 = st.columns(2)
+        st.subheader("Jelenlegi végtermék preview")
+        preview_tab, md_tab, json_tab = st.tabs(["Deck preview", "Markdown", "JSON / letöltések"])
 
-        with col1:
-            st.subheader("JSON export package")
-            st.code(json_export, language="json")
-            st.download_button(
-                "JSON letöltése",
-                data=json_export.encode("utf-8"),
-                file_name="briefing_export_package.json",
-                mime="application/json",
-            )
-            st.download_button(
-                "PDF briefing letöltése",
-                data=pdf_export,
-                file_name="briefing_export_package.pdf" if REPORTLAB_AVAILABLE else "briefing_export_package.txt",
-                mime="application/pdf" if REPORTLAB_AVAILABLE else "text/plain",
-            )
-            st.download_button(
-                "HTML briefing letöltése",
-                data=html_export.encode("utf-8"),
-                file_name="briefing_export_package.html",
-                mime="text/html",
-            )
+        with preview_tab:
+            render_export_preview(package)
 
-        with col2:
-            st.subheader("Markdown export preview")
-            st.text_area("Markdown", value=md_export, height=480)
-            st.download_button(
-                "Markdown letöltése",
-                data=md_export.encode("utf-8"),
-                file_name="briefing_export_package.md",
-                mime="text/markdown",
-            )
+        with md_tab:
+            st.text_area("Markdown", value=md_export, height=520)
 
-        st.subheader("Coach control snapshot")
-        st.json(coach_controls)
+        with json_tab:
+            dl1, dl2 = st.columns(2)
+            with dl1:
+                st.code(json_export, language="json")
+                st.download_button(
+                    "JSON letöltése",
+                    data=json_export.encode("utf-8"),
+                    file_name="briefing_export_package.json",
+                    mime="application/json",
+                )
+                st.download_button(
+                    "PDF briefing letöltése",
+                    data=pdf_export,
+                    file_name="briefing_export_package.pdf" if REPORTLAB_AVAILABLE else "briefing_export_package.txt",
+                    mime="application/pdf" if REPORTLAB_AVAILABLE else "text/plain",
+                )
+                st.download_button(
+                    "HTML briefing letöltése",
+                    data=html_export.encode("utf-8"),
+                    file_name="briefing_export_package.html",
+                    mime="text/html",
+                )
+                st.download_button(
+                    "Markdown letöltése",
+                    data=md_export.encode("utf-8"),
+                    file_name="briefing_export_package.md",
+                    mime="text/markdown",
+                )
+            with dl2:
+                st.markdown("#### Control státusz")
+                st.dataframe(pd.DataFrame(control_status_rows(st.session_state.get("coach_link_controls", True))), use_container_width=True, hide_index=True)
+                st.markdown("#### Coach control snapshot")
+                st.json(coach_controls)
         st.info(f"Export mód: {'szimulált coach-hatással korrigált dimenziók' if st.session_state.get('use_adjusted_dims', True) else 'alap dimenziók'}")
 
         if st.session_state.get("decision_support"):
