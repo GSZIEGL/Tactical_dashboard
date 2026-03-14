@@ -9,11 +9,16 @@ import pandas as pd
 import pdfplumber
 import streamlit as st
 import streamlit.components.v1 as components
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import mm
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+
+REPORTLAB_AVAILABLE = True
+try:
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+except Exception:
+    REPORTLAB_AVAILABLE = False
 
 st.set_page_config(page_title="Tactical Briefing Engine", layout="wide")
 
@@ -733,6 +738,149 @@ def parse_bullet_text(text: str) -> List[str]:
     return [x.strip("-• ").strip() for x in str(text).splitlines() if x.strip()]
 
 
+def first_existing_column(df: Optional[pd.DataFrame], candidates: List[str]) -> Optional[str]:
+    if df is None or df.empty:
+        return None
+    lowered = {str(c).strip().lower(): c for c in df.columns}
+    for cand in candidates:
+        if cand.lower() in lowered:
+            return lowered[cand.lower()]
+    return None
+
+
+def get_player_col(df: Optional[pd.DataFrame]) -> Optional[str]:
+    return first_existing_column(df, ["Player", "player", "Játékos", "jatekos"])
+
+
+def get_current_coach_controls() -> Dict[str, object]:
+    return {
+        "primary_model": st.session_state.get("coach_primary_model", st.session_state.get("selected_plan_a", "GAT")),
+        "secondary_model": st.session_state.get("coach_secondary_model", st.session_state.get("selected_plan_b", "BAT")),
+        "focus_areas": st.session_state.get("coach_focus_areas", []),
+        "selected_risks": st.session_state.get("coach_selected_risks", []),
+        "focus_players": st.session_state.get("coach_focus_players", []),
+        "pressing_zone": st.session_state.get("coach_pressing_zone", "közép"),
+        "build_up_solution": st.session_state.get("coach_build_up_solution", "vegyes"),
+        "defensive_block": st.session_state.get("coach_defensive_block", "közepes"),
+        "match_scenario": st.session_state.get("coach_match_scenario", "balanced"),
+        "plan_a_emphasis": st.session_state.get("coach_plan_a_emphasis", st.session_state.get("selected_split", 60)),
+        "set_piece_priority": st.session_state.get("coach_set_piece_priority", "mindkettő"),
+        "second_ball_focus": st.session_state.get("coach_second_ball_focus", False),
+        "halfspace_defense_priority": st.session_state.get("coach_halfspace_defense_priority", False),
+    }
+
+
+def apply_coach_adjustments(base_dims: Dict[str, Dict[str, float]], controls: Dict[str, object]):
+    adjusted = {k: dict(v) for k, v in base_dims.items()}
+    impacts = []
+
+    def add(dim: str, delta: float, reason: str):
+        if dim not in adjusted:
+            return
+        before = adjusted[dim]["KTE"]
+        adjusted[dim]["KTE"] = round(clamp(before + delta), 1)
+        adjusted[dim]["Edge"] = round(adjusted[dim]["KTE"] - adjusted[dim]["ELL"], 1)
+        impacts.append({"Dimenzió": dim, "Hatás": round(delta, 1), "Ok": reason})
+
+    focus_areas = controls.get("focus_areas", []) or []
+    for area in focus_areas:
+        if area == "pressing":
+            add("Letámadás", 0.8, "Coach fókusz: pressing")
+            add("Labdabirtoklás", -0.2, "Coach fókusz: pressing trade-off")
+        elif area == "build-up":
+            add("Labdakihozatal", 0.8, "Coach fókusz: build-up")
+            add("Labdabirtoklás", 0.4, "Coach fókusz: build-up")
+            add("Átmenetek", -0.2, "Coach fókusz: build-up trade-off")
+        elif area == "transition":
+            add("Átmenetek", 0.9, "Coach fókusz: transition")
+            add("Támadó játék", 0.4, "Coach fókusz: transition")
+            add("Labdabirtoklás", -0.2, "Coach fókusz: transition trade-off")
+        elif area == "set pieces":
+            add("Pontrúgások", 0.9, "Coach fókusz: set pieces")
+        elif area == "rest defense":
+            add("Letámadás", 0.5, "Coach fókusz: rest defense")
+            add("Lövésprofil", -0.2, "Coach fókusz: rest defense trade-off")
+
+    build_up = controls.get("build_up_solution")
+    if build_up == "rövid":
+        add("Labdakihozatal", 0.7, "Rövid build-up")
+        add("Labdabirtoklás", 0.5, "Rövid build-up")
+        add("Átmenetek", -0.3, "Rövid build-up trade-off")
+    elif build_up == "direkt":
+        add("Átmenetek", 0.7, "Direkt build-up")
+        add("Támadó játék", 0.3, "Direkt build-up")
+        add("Labdabirtoklás", -0.5, "Direkt build-up trade-off")
+        add("Labdakihozatal", -0.2, "Direkt build-up trade-off")
+
+    block = controls.get("defensive_block")
+    if block == "mély":
+        add("Letámadás", -0.3, "Mély blokk")
+        add("Átmenetek", 0.5, "Mély blokk")
+        add("Pontrúgások", 0.2, "Mély blokk")
+    elif block == "magas":
+        add("Letámadás", 0.8, "Magas blokk")
+        add("Labdabirtoklás", 0.2, "Magas blokk")
+        add("Átmenetek", -0.2, "Magas blokk trade-off")
+
+    pressing_zone = controls.get("pressing_zone")
+    if pressing_zone == "half-space":
+        add("Letámadás", 0.4, "Half-space pressing fókusz")
+        add("Támadó játék", 0.2, "Half-space pressing fókusz")
+    elif pressing_zone in ["bal", "jobb"]:
+        add("Letámadás", 0.3, f"Oldalsó pressing fókusz: {pressing_zone}")
+
+    scenario = controls.get("match_scenario")
+    if scenario == "conservative":
+        add("Labdakihozatal", 0.3, "Konzervatív forgatókönyv")
+        add("Labdabirtoklás", 0.3, "Konzervatív forgatókönyv")
+        add("Átmenetek", -0.3, "Konzervatív forgatókönyv trade-off")
+    elif scenario == "aggressive":
+        add("Letámadás", 0.5, "Agresszív forgatókönyv")
+        add("Támadó játék", 0.5, "Agresszív forgatókönyv")
+        add("Lövésprofil", 0.2, "Agresszív forgatókönyv")
+        add("Labdakihozatal", -0.2, "Agresszív forgatókönyv trade-off")
+
+    plan_a = int(controls.get("plan_a_emphasis", 60))
+    if plan_a >= 65:
+        add("Támadó játék", 0.3, "Magas Plan A hangsúly")
+    elif plan_a <= 54:
+        add("Labdakihozatal", 0.2, "Kiegyenlítettebb terv")
+        add("Átmenetek", 0.2, "Kiegyenlítettebb terv")
+
+    set_piece = controls.get("set_piece_priority")
+    if set_piece == "támadó":
+        add("Pontrúgások", 0.5, "Támadó pontrúgás-prioritás")
+    elif set_piece == "védekező":
+        add("Letámadás", 0.2, "Védekező pontrúgás-prioritás")
+    elif set_piece == "mindkettő":
+        add("Pontrúgások", 0.3, "Kétoldali pontrúgás-prioritás")
+
+    if controls.get("second_ball_focus"):
+        add("Átmenetek", 0.4, "Second ball fókusz")
+        add("Pontrúgások", 0.2, "Second ball fókusz")
+    if controls.get("halfspace_defense_priority"):
+        add("Letámadás", 0.3, "Félterület-védekezési prioritás")
+        add("Labdakihozatal", 0.2, "Félterület-védekezési prioritás")
+
+    impact_df = pd.DataFrame(impacts)
+    if not impact_df.empty:
+        impact_df = impact_df.groupby(["Dimenzió", "Ok"], as_index=False)["Hatás"].sum()
+        impact_df["Hatás"] = impact_df["Hatás"].round(1)
+
+    summary_rows = []
+    for dim, vals in base_dims.items():
+        summary_rows.append({
+            "Dimenzió": dim,
+            "Alap KTE": vals["KTE"],
+            "Szimulált KTE": adjusted[dim]["KTE"],
+            "ELL": vals["ELL"],
+            "Alap edge": vals["Edge"],
+            "Szimulált edge": adjusted[dim]["Edge"],
+            "Δ": round(adjusted[dim]["KTE"] - vals["KTE"], 1),
+        })
+    return adjusted, impact_df, pd.DataFrame(summary_rows)
+
+
 def player_focus_options(opp_players: Optional[Dict[str, pd.DataFrame]]) -> List[str]:
     opts = []
     if not opp_players:
@@ -746,10 +894,11 @@ def player_focus_options(opp_players: Optional[Dict[str, pd.DataFrame]]) -> List
     }
     for group, prefix in labels.items():
         df = opp_players.get(group)
-        if df is None or df.empty or "Player" not in df.columns:
+        player_col = get_player_col(df)
+        if df is None or df.empty or not player_col:
             continue
         for _, row in df.head(3).iterrows():
-            player = str(row.get("Player", "")).strip()
+            player = str(row.get(player_col, "")).strip()
             if player:
                 opts.append(f"{player} ({prefix})")
     return unique_keep_order(opts)
@@ -834,27 +983,262 @@ def build_coach_summary(controls: Dict[str, object]) -> Dict[str, str]:
 
 
 def sync_coach_texts_from_controls():
-    controls = {
-        "primary_model": st.session_state.get("coach_primary_model", st.session_state.get("selected_plan_a", "GAT")),
-        "secondary_model": st.session_state.get("coach_secondary_model", st.session_state.get("selected_plan_b", "BAT")),
-        "focus_areas": st.session_state.get("coach_focus_areas", []),
-        "selected_risks": st.session_state.get("coach_selected_risks", []),
-        "focus_players": st.session_state.get("coach_focus_players", []),
-        "pressing_zone": st.session_state.get("coach_pressing_zone", "közép"),
-        "build_up_solution": st.session_state.get("coach_build_up_solution", "vegyes"),
-        "defensive_block": st.session_state.get("coach_defensive_block", "közepes"),
-        "match_scenario": st.session_state.get("coach_match_scenario", "balanced"),
-        "plan_a_emphasis": st.session_state.get("coach_plan_a_emphasis", st.session_state.get("selected_split", 60)),
-        "set_piece_priority": st.session_state.get("coach_set_piece_priority", "mindkettő"),
-        "second_ball_focus": st.session_state.get("coach_second_ball_focus", False),
-        "halfspace_defense_priority": st.session_state.get("coach_halfspace_defense_priority", False),
-    }
+    controls = get_current_coach_controls()
     summary = build_coach_summary(controls)
     for k, v in summary.items():
         st.session_state[k] = v
     st.session_state["selected_plan_a"] = controls["primary_model"]
     st.session_state["selected_plan_b"] = controls["secondary_model"]
     st.session_state["selected_split"] = int(controls["plan_a_emphasis"])
+    base_dims = st.session_state.get("dims")
+    if base_dims:
+        adjusted_dims, impact_df, comparison_df = apply_coach_adjustments(base_dims, controls)
+        st.session_state["dims_adjusted"] = adjusted_dims
+        st.session_state["coach_impact_df"] = impact_df
+        st.session_state["coach_dim_comparison"] = comparison_df
+        st.session_state["decision_support"] = build_decision_support(
+            base_dims,
+            adjusted_dims,
+            controls,
+            st.session_state.get("team_metrics"),
+            st.session_state.get("opp_metrics"),
+            st.session_state.get("team_matches"),
+            st.session_state.get("opp_matches"),
+            st.session_state.get("opp_pdf_insights"),
+        )
+
+
+def metric_pm(metrics: Optional[Dict[str, float]], key: str, matches: Optional[int]) -> float:
+    if not metrics:
+        return 0.0
+    return round(metrics.get(key, 0) / max(matches or 1, 1), 2)
+
+
+def build_decision_support(base_dims, adjusted_dims, controls, team_metrics, opp_metrics, team_matches, opp_matches, opp_pdf_insights):
+    base_dims = base_dims or {}
+    adjusted_dims = adjusted_dims or base_dims or {}
+    controls = controls or {}
+
+    def dim_delta(name: str) -> float:
+        if name not in adjusted_dims or name not in base_dims:
+            return 0.0
+        return round(adjusted_dims[name]["KTE"] - base_dims[name]["KTE"], 1)
+
+    changes = []
+    for dim in adjusted_dims:
+        if dim in base_dims:
+            d = dim_delta(dim)
+            if abs(d) > 0:
+                changes.append({"dim": dim, "delta": d})
+    changes = sorted(changes, key=lambda x: abs(x["delta"]), reverse=True)
+
+    opp_shots_pm = metric_pm(opp_metrics, "shots", opp_matches)
+    opp_entries_pm = metric_pm(opp_metrics, "entries_box", opp_matches)
+    team_entries_pm = metric_pm(team_metrics, "entries_box", team_matches)
+    team_keypasses_pm = metric_pm(team_metrics, "key_passes", team_matches)
+    opp_poss = opp_metrics.get("possession_pct", 0)
+    if opp_poss <= 1:
+        opp_poss *= 100
+    team_press = team_metrics.get("pressing_success_pct", 0)
+    if team_press <= 1:
+        team_press *= 100
+    opp_pass = opp_metrics.get("passes_accurate_pct", 0)
+    if opp_pass <= 1:
+        opp_pass *= 100
+
+    matchup_notes = []
+    if opp_pass >= 72:
+        matchup_notes.append("Az ellenfél passzbiztonsága alapján a presszinget triggerhez kötve érdemes indítani, nem folyamatosan kinyílni.")
+    else:
+        matchup_notes.append("Az ellenfél passzjátéka sebezhetőbb, ezért a magasabb nyomás várhatóan több hibát kényszerít ki.")
+    if opp_entries_pm >= 15 or opp_shots_pm >= 10:
+        matchup_notes.append("Az ellenfél boxba érkezési volumene miatt a rest defense és a boxelőtti kontroll nem engedhető el.")
+    else:
+        matchup_notes.append("Az ellenfél kisebb volumenű boxfenyegetése mellett nagyobb teret lehet adni a proaktív labdás tervnek.")
+    if team_entries_pm >= opp_entries_pm and team_keypasses_pm >= 3:
+        matchup_notes.append("A saját támadóprofil alapján van alap a tudatosabb, több fázisból épített támadótervhez.")
+    else:
+        matchup_notes.append("A saját támadóprofil inkább helyzetminőség-javítást kér, mint puszta volumenfokozást.")
+
+    cards = []
+
+    def add_card(title, choice, gains, costs, fit, dims):
+        cards.append({
+            "title": title,
+            "choice": choice,
+            "gains": unique_keep_order(gains)[:3],
+            "costs": unique_keep_order(costs)[:3],
+            "fit": fit,
+            "dims": dims,
+        })
+
+    build_up = controls.get("build_up_solution", "vegyes")
+    if build_up == "rövid":
+        add_card(
+            "Labdakihozatal döntés",
+            "Rövid build-up",
+            ["Stabilabb első passzsor és több kontroll az első két fázisban.", "Nőhet a labdabirtoklási és build-up minőség."],
+            ["Nagyobb a presszingcsapda-kitettség.", "Az átmeneti direkt területnyerés lassulhat."],
+            "Akkor illeszkedik jól, ha az ellenfél nem tud tartósan hatékony magas nyomást fenntartani.",
+            ["Labdakihozatal", "Labdabirtoklás", "Átmenetek"],
+        )
+    elif build_up == "direkt":
+        add_card(
+            "Labdakihozatal döntés",
+            "Direkt build-up",
+            ["Gyorsabban lehet átlépni az első nyomást.", "Nőhet a második labdák és átmeneti helyzetek száma."],
+            ["Csökkenhet a kontroll és a visszatámadás előkészítettsége.", "Pontatlanabb első passz után hosszabb védekezési fázis jöhet."],
+            "Akkor működik jól, ha az ellenfél nyomás mögött nyit területet, vagy aerial/second-ball fölény elérhető.",
+            ["Átmenetek", "Támadó játék", "Labdabirtoklás"],
+        )
+    else:
+        add_card(
+            "Labdakihozatal döntés",
+            "Vegyes build-up",
+            ["Rugalmas váltás rövid és direkt megoldások között.", "Kisebb a kiszámíthatóság."],
+            ["Nehezebb ritmust találni, ha nincs egyértelmű trigger.", "Döntési bizonytalanság lassíthatja a progressziót."],
+            "Akkor jó, ha az ellenfél profilja vegyes és a meccskép várhatóan több irányba fordulhat.",
+            ["Labdakihozatal", "Átmenetek"],
+        )
+
+    block = controls.get("defensive_block", "közepes")
+    if block == "magas":
+        add_card(
+            "Blokkmagasság döntés",
+            "Magas blokk",
+            ["Felül lehet megszerezni a labdát.", "Rövidülhet az út az ellenfél kapujáig."],
+            ["Megnő a mélységi terület kitettsége.", "Pontatlan kilépésnél gyors ellenátmenet jöhet."],
+            "Leginkább akkor támogatható, ha a saját presszinghatékonyság jó és az ellenfél passzbiztonsága nem kiemelkedő.",
+            ["Letámadás", "Labdabirtoklás", "Átmenetek"],
+        )
+    elif block == "mély":
+        add_card(
+            "Blokkmagasság döntés",
+            "Mély blokk",
+            ["Jobban védhető a kapu előtere és a mélység.", "Erősebb lehet a kontrás meccskép."],
+            ["Több területi nyomás kerül az ellenfélhez.", "Kevesebb lehet a magasan szerzett labda."],
+            "Akkor logikus, ha az ellenfél magas volumenben támadja a boxot vagy te labda nélkül akarod szűkíteni a meccset.",
+            ["Átmenetek", "Letámadás", "Pontrúgások"],
+        )
+    else:
+        add_card(
+            "Blokkmagasság döntés",
+            "Közepes blokk",
+            ["Kisebb szélsőség, jobb strukturális egyensúly.", "Könnyebb menet közben váltani."],
+            ["Kevesebb extrém előnyt ad bármelyik irányban.", "Ha nincs jó trigger, passzívvá válhat."],
+            "Stabil alapbeállítás, ha a matchup vegyes és a Plan B-re is nyitva akarod hagyni az ajtót.",
+            ["Letámadás", "Átmenetek"],
+        )
+
+    focus_areas = controls.get("focus_areas", []) or []
+    if focus_areas:
+        gains = []
+        costs = []
+        affected = []
+        if "pressing" in focus_areas:
+            gains.append("Több labdaszerzés jöhet az ellenfél első két fázisában.")
+            costs.append("Ha nem zár mögötte a szerkezet, nő a mélységi kitettség.")
+            affected.append("Letámadás")
+        if "build-up" in focus_areas:
+            gains.append("Tisztább lesz a saját első és második passzsor.")
+            costs.append("A támadási ritmus lassulhat, ha túl sok az előkészítő passz.")
+            affected += ["Labdakihozatal", "Labdabirtoklás"]
+        if "transition" in focus_areas:
+            gains.append("Nőhet a kevés passzból kialakított helyzetek száma.")
+            costs.append("Több lehet a gyors labdavesztés utáni rendezetlenség.")
+            affected += ["Átmenetek", "Támadó játék"]
+        if "set pieces" in focus_areas:
+            gains.append("A pontrúgásból származó edge jobban kiaknázható.")
+            costs.append("Nyílt játékban kevesebb fókusz maradhat.")
+            affected.append("Pontrúgások")
+        if "rest defense" in focus_areas:
+            gains.append("Erősebb lehet az átmeneti védekezés és a második hullám kontrollja.")
+            costs.append("Kevesebb játékos csatlakozik támadásban a labda elé.")
+            affected += ["Letámadás", "Lövésprofil"]
+        add_card(
+            "Meccskép-prioritás",
+            ", ".join(focus_areas),
+            gains,
+            costs,
+            "A fókuszterületek együtt adják a meccsidentitást; minél több elem aktív, annál több trade-off jelenik meg.",
+            unique_keep_order(affected),
+        )
+
+    scenario = controls.get("match_scenario", "balanced")
+    add_card(
+        "Meccsdinamika forgatókönyv",
+        scenario,
+        {
+            "conservative": ["Kisebb variancia, több kontroll a meccs elején.", "Jobb szerkezeti stabilitás labdavesztés után."],
+            "balanced": ["Könnyebb váltani Plan A és Plan B között.", "Nem feszíti túl korán a meccset."],
+            "aggressive": ["Gyorsabb meccsnyitás és több támadó akció.", "Erősebb pszichológiai nyomás az ellenfélen."],
+        }.get(scenario, []),
+        {
+            "conservative": ["Nehezebb lehet korán dominálni a területet.", "A támadó volumen visszafogottabb maradhat."],
+            "balanced": ["Kevesebb szélsőértékű edge.", "A döntési helyzetek egy része nyitva marad a pályán."],
+            "aggressive": ["Nő a strukturális kockázat és az átmeneti sebezhetőség.", "Gyors fáradás vagy pontrúgás-kitettség jöhet."],
+        }.get(scenario, []),
+        "A forgatókönyv nem csak tempót, hanem kockázatvállalási szintet is kijelöl.",
+        ["Letámadás", "Támadó játék", "Labdakihozatal"],
+    )
+
+    special_gains = []
+    special_costs = []
+    special_dims = []
+    if controls.get("second_ball_focus"):
+        special_gains.append("Tisztább lehet a direkt játék utáni második akció.")
+        special_costs.append("A második labdára rendezés miatt kevesebb játékos marad magas pozícióban.")
+        special_dims += ["Átmenetek", "Támadó játék"]
+    if controls.get("halfspace_defense_priority"):
+        special_gains.append("Jobban védhető az ellenfél belső kombinációs csatornája.")
+        special_costs.append("A szélső terület felé terelődhet az ellenfél támadása.")
+        special_dims += ["Letámadás", "Lövésprofil"]
+    set_piece = controls.get("set_piece_priority", "mindkettő")
+    if set_piece:
+        special_gains.append(f"Pontrúgás-fókusz: {set_piece}.")
+        special_dims.append("Pontrúgások")
+    if special_gains or special_costs:
+        add_card(
+            "Speciális hangsúlyok",
+            " / ".join([x for x in ["second ball" if controls.get("second_ball_focus") else "", "half-space" if controls.get("halfspace_defense_priority") else "", f"pontrúgás:{set_piece}" if set_piece else ""] if x]),
+            special_gains or ["Nincs külön extra hangsúly."],
+            special_costs or ["Nincs külön extra kompromisszum megjelölve."],
+            "Ezek a jelölések finomhangolják a meccstervet, főleg a részhelyzetek kezelésében.",
+            unique_keep_order(special_dims),
+        )
+
+    top_changes = [f"{x['dim']} {x['delta']:+.1f}" for x in changes[:3]] or ["nincs jelentős dimenzióeltolás"]
+    player_focus = controls.get("focus_players", []) or []
+
+    executive = (
+        f"A jelenlegi coach-beállítás főleg a következő dimenziókat tolja el: {', '.join(top_changes)}. "
+        f"A döntés logikája: {controls.get('primary_model', '-')}/{controls.get('secondary_model', '-')}, "
+        f"{controls.get('plan_a_emphasis', 60)}/{100-int(controls.get('plan_a_emphasis', 60))} aránnyal."
+    )
+
+    recommendation = []
+    if controls.get("defensive_block") == "magas" and opp_pass < 72:
+        recommendation.append("A magasabb blokk adatalapon is védhetőbbnek tűnik, mert az ellenfél passzbiztonsága nem kiemelkedő.")
+    elif controls.get("defensive_block") == "magas":
+        recommendation.append("A magas blokk csak szakaszosan ajánlott; az ellenfél passzjátéka miatt célszerű triggerhez kötni.")
+    if build_up == "direkt" and opp_entries_pm >= 15:
+        recommendation.append("A direkt build-up mellett a rest defense-et külön biztosítani kell, mert az ellenfél visszatámadásból is veszélyes lehet.")
+    if build_up == "rövid" and team_press < 50:
+        recommendation.append("Rövid build-up esetén fontos az első labdavesztés utáni azonnali reakció, mert a saját presszinghatékonyság nem kiemelkedő.")
+    if controls.get("second_ball_focus"):
+        recommendation.append("A second ball fókusz jól illeszkedik ehhez a matchuphoz, ha a direkt szakaszok száma nőni fog.")
+    if controls.get("focus_players"):
+        recommendation.append(f"Kulcsjátékos fókusz: {', '.join(player_focus[:3])} – a game plan kommunikációja ezekre a matchupokra fűzhető fel.")
+    if not recommendation:
+        recommendation.append("A jelenlegi beállítás stabil, közepes varianciájú meccstervet ad; a fő döntési pont a blokk és a build-up váltási triggerje marad.")
+
+    return {
+        "executive_summary": executive,
+        "top_dimension_changes": top_changes,
+        "matchup_notes": unique_keep_order(matchup_notes)[:3],
+        "recommendation": unique_keep_order(recommendation)[:4],
+        "cards": cards,
+    }
 
 
 def render_methodology_block():
@@ -890,6 +1274,9 @@ def render_methodology_block():
 
 
 def build_pdf_export_bytes(package: Dict[str, object]) -> bytes:
+    if not REPORTLAB_AVAILABLE:
+        content = build_markdown_export(package)
+        return content.encode("utf-8")
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer,
@@ -1006,6 +1393,7 @@ def build_export_package(
     opponent_dna_text: str,
     opp_players: Optional[Dict[str, pd.DataFrame]],
     coach_controls: Optional[Dict[str, object]] = None,
+    decision_support: Optional[Dict[str, object]] = None,
 ) -> Dict[str, object]:
     package = {
         "page_1_onepager": {
@@ -1013,6 +1401,8 @@ def build_export_package(
             "plan_b": selected_plan_b,
             "plan_split": f"{selected_split}/{100 - selected_split}",
             "dimensions": dims,
+            "dimension_mode": "adjusted" if st.session_state.get("use_adjusted_dims", True) else "base",
+            "base_dimensions": st.session_state.get("dims"),
             "opponent_profile": opponent_profile_text,
             "own_state": own_state_text,
             "three_keys": parse_bullet_text(three_keys_text),
@@ -1031,6 +1421,7 @@ def build_export_package(
             },
         },
         "coach_controls": coach_controls or {},
+        "decision_support": decision_support or {},
     }
     return package
 
@@ -1046,6 +1437,7 @@ def build_markdown_export(package: Dict[str, object]) -> str:
     md.append(f"- Plan A: {p1['plan_a']}")
     md.append(f"- Plan B: {p1['plan_b']}")
     md.append(f"- Arány: {p1['plan_split']}")
+    md.append(f"- Dimenzió mód: {p1.get('dimension_mode', 'base')}")
     md.append("")
     md.append("### Ellenfél profil")
     md.append(p1["opponent_profile"])
@@ -1068,6 +1460,15 @@ def build_markdown_export(package: Dict[str, object]) -> str:
     for k, v in package.get("coach_controls", {}).items():
         md.append(f"- {k}: {v}")
     md.append("")
+    ds = package.get("decision_support", {})
+    if ds:
+        md.append("### Taktikai döntési hatás")
+        md.append(ds.get("executive_summary", ""))
+        for x in ds.get("matchup_notes", []):
+            md.append(f"- Matchup: {x}")
+        for x in ds.get("recommendation", []):
+            md.append(f"- Javaslat: {x}")
+        md.append("")
     md.append("## 3. oldal – Tactical overview")
     md.append("")
     md.append("### Opponent DNA")
@@ -1330,6 +1731,11 @@ defaults = {
     "risks_text": "",
     "match_dynamics_text": "",
     "conclusion_text": "",
+    "dims_adjusted": None,
+    "coach_impact_df": None,
+    "coach_dim_comparison": None,
+    "decision_support": None,
+    "use_adjusted_dims": True,
     "coach_primary_model": "GAT",
     "coach_secondary_model": "BAT",
     "coach_focus_areas": [],
@@ -1507,6 +1913,8 @@ if step == "1. Input":
 
 if step == "2. Review":
     dims = st.session_state.get("dims")
+    adjusted_dims = st.session_state.get("dims_adjusted")
+    active_dims = adjusted_dims if st.session_state.get("use_adjusted_dims", True) and adjusted_dims else dims
     team_metrics = st.session_state.get("team_metrics")
     opp_metrics = st.session_state.get("opp_metrics")
     team_matches = st.session_state.get("team_matches")
@@ -1525,6 +1933,8 @@ if step == "2. Review":
         if diff_count < 2:
             st.error("A KTE és az ellenfél között túl kevés eltérő nyers metrika van. Nézd meg a Debug fület.")
 
+        adjusted_dims = st.session_state.get("dims_adjusted")
+        active_dims = adjusted_dims if st.session_state.get("use_adjusted_dims", True) and adjusted_dims else dims
         top1, top2, top3 = st.columns(3)
         top1.metric("Ajánlott / választott Plan A", st.session_state["selected_plan_a"])
         top2.metric("Ajánlott / választott Plan B", st.session_state["selected_plan_b"])
@@ -1639,16 +2049,66 @@ if step == "2. Review":
         with st.expander("A 9 taktikai opció táblázata", expanded=False):
             st.table(strategy_palette_rows())
 
+        st.session_state["use_adjusted_dims"] = st.checkbox(
+            "Coach-hatások beépítése a dimenziókba és exportba",
+            value=st.session_state.get("use_adjusted_dims", True),
+            help="Ha be van kapcsolva, a coach választások szimuláltan módosítják a KTE 7 dimenziós profilját.",
+        )
+        active_dims = st.session_state.get("dims_adjusted") if st.session_state.get("use_adjusted_dims", True) and st.session_state.get("dims_adjusted") else dims
+
+        st.subheader("Coach-hatás a mutatókra")
+        impact_df = st.session_state.get("coach_impact_df")
+        comparison_df = st.session_state.get("coach_dim_comparison")
+        if comparison_df is not None and not comparison_df.empty:
+            cimp1, cimp2 = st.columns([1.15, 1])
+            with cimp1:
+                st.dataframe(comparison_df, use_container_width=True, hide_index=True)
+            with cimp2:
+                if impact_df is not None and not impact_df.empty:
+                    st.dataframe(impact_df, use_container_width=True, hide_index=True)
+                else:
+                    st.info("Még nincs számottevő coach-hatás rögzítve.")
+        st.caption("Az itt látható hatások szabályalapú taktikai döntéselőkészítő logikából jönnek: a rendszer a választott game plan várható előnyeit, kompromisszumait és matchup-illeszkedését mutatja meg.")
+
+        decision_support = st.session_state.get("decision_support") or {}
+        if decision_support:
+            st.subheader("Taktikai döntési hatásmotor")
+            st.info(decision_support.get("executive_summary", ""))
+
+            ds1, ds2 = st.columns(2)
+            with ds1:
+                st.markdown("**Matchup-olvasat**")
+                for line in decision_support.get("matchup_notes", []):
+                    st.write(f"- {line}")
+            with ds2:
+                st.markdown("**Vezetői javaslatok**")
+                for line in decision_support.get("recommendation", []):
+                    st.write(f"- {line}")
+
+            for card in decision_support.get("cards", []):
+                with st.expander(f"{card['title']} – {card['choice']}", expanded=False):
+                    cga, cgb = st.columns(2)
+                    with cga:
+                        st.markdown("**Várható nyereség**")
+                        for line in card.get("gains", []):
+                            st.write(f"- {line}")
+                    with cgb:
+                        st.markdown("**Trade-off / ár**")
+                        for line in card.get("costs", []):
+                            st.write(f"- {line}")
+                    st.markdown(f"**Matchup-fit:** {card.get('fit', '-')}")
+                    st.markdown(f"**Érintett dimenziók:** {', '.join(card.get('dims', [])) or '-'}")
+
         st.subheader("Dimenzió tábla")
-        st.dataframe(pd.DataFrame(dims).T, use_container_width=True)
+        st.dataframe(pd.DataFrame(active_dims).T, use_container_width=True)
 
         c1, c2 = st.columns([1.25, 1])
         with c1:
             st.subheader("Pókháló")
-            render_radar_svg(dims)
+            render_radar_svg(active_dims)
         with c2:
             st.subheader("Dimenziók")
-            render_bar_chart(dims)
+            render_bar_chart(active_dims)
 
         st.subheader("Opponent key players")
         if opp_players is not None:
@@ -1799,6 +2259,8 @@ if step == "3. Debug":
 
 if step == "4. Export Prep":
     dims = st.session_state.get("dims")
+    adjusted_dims = st.session_state.get("dims_adjusted")
+    active_dims = adjusted_dims if st.session_state.get("use_adjusted_dims", True) and adjusted_dims else dims
     opp_players = st.session_state.get("opp_players")
 
     if not dims:
@@ -1807,6 +2269,8 @@ if step == "4. Export Prep":
         sync_coach_texts_from_controls()
         render_methodology_block()
         st.header("Export Prep – template előkészítés")
+        if not REPORTLAB_AVAILABLE:
+            st.warning("A reportlab nincs telepítve, ezért a PDF gomb szöveges fallback fájlt ad vissza. HTML export viszont működik.")
 
         coach_controls = {
             "primary_model": st.session_state["coach_primary_model"],
@@ -1828,7 +2292,7 @@ if step == "4. Export Prep":
             selected_plan_a=st.session_state["selected_plan_a"],
             selected_plan_b=st.session_state["selected_plan_b"],
             selected_split=st.session_state["selected_split"],
-            dims=dims,
+            dims=active_dims,
             opponent_profile_text=st.session_state["opponent_profile_text"],
             own_state_text=st.session_state["own_state_text"],
             three_keys_text=st.session_state["three_keys_text"],
@@ -1838,11 +2302,13 @@ if step == "4. Export Prep":
             opponent_dna_text=st.session_state["opponent_dna_text"],
             opp_players=opp_players,
             coach_controls=coach_controls,
+            decision_support=st.session_state.get("decision_support"),
         )
 
         md_export = build_markdown_export(package)
         json_export = json.dumps(package, ensure_ascii=False, indent=2)
         pdf_export = build_pdf_export_bytes(package)
+        html_export = f"""<html><head><meta charset='utf-8'><title>Tactical Briefing</title></head><body><pre style='white-space: pre-wrap; font-family: Arial, sans-serif;'>{md_export}</pre></body></html>"""
 
         col1, col2 = st.columns(2)
 
@@ -1858,8 +2324,14 @@ if step == "4. Export Prep":
             st.download_button(
                 "PDF briefing letöltése",
                 data=pdf_export,
-                file_name="briefing_export_package.pdf",
-                mime="application/pdf",
+                file_name="briefing_export_package.pdf" if REPORTLAB_AVAILABLE else "briefing_export_package.txt",
+                mime="application/pdf" if REPORTLAB_AVAILABLE else "text/plain",
+            )
+            st.download_button(
+                "HTML briefing letöltése",
+                data=html_export.encode("utf-8"),
+                file_name="briefing_export_package.html",
+                mime="text/html",
             )
 
         with col2:
@@ -1874,6 +2346,13 @@ if step == "4. Export Prep":
 
         st.subheader("Coach control snapshot")
         st.json(coach_controls)
+        st.info(f"Export mód: {'szimulált coach-hatással korrigált dimenziók' if st.session_state.get('use_adjusted_dims', True) else 'alap dimenziók'}")
+
+        if st.session_state.get("decision_support"):
+            st.subheader("Exportba kerülő taktikai döntési blokk")
+            st.write(st.session_state["decision_support"].get("executive_summary", ""))
+            for line in st.session_state["decision_support"].get("recommendation", [])[:4]:
+                st.write(f"- {line}")
 
         st.subheader("Mi jön ezután?")
         st.write("- Következő lépés: a JSON/PDF package mezőit rámapeljük a gold standard PPT template konkrét textboxaira.")
