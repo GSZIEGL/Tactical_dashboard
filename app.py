@@ -2,6 +2,7 @@ import io
 import json
 import math
 import re
+import unicodedata
 import base64
 from pathlib import Path
 from typing import Dict, Optional, List, Tuple
@@ -60,15 +61,19 @@ def ensure_pdf_font() -> str:
         return PDF_FONT_NAME
 
     regular_candidates = [
+        "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/dejavu/DejaVuSans.ttf",
         "/usr/local/share/fonts/DejaVuSans.ttf",
+        str(Path.home() / ".fonts" / "NotoSans-Regular.ttf"),
         str(Path.home() / ".fonts" / "DejaVuSans.ttf"),
     ]
     bold_candidates = [
+        "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
         "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
         "/usr/local/share/fonts/DejaVuSans-Bold.ttf",
+        str(Path.home() / ".fonts" / "NotoSans-Bold.ttf"),
         str(Path.home() / ".fonts" / "DejaVuSans-Bold.ttf"),
     ]
 
@@ -1627,7 +1632,7 @@ def get_radar_png_bytes(dims: Dict[str, Dict[str, float]]) -> Optional[bytes]:
     angles += angles[:1]
     kte += kte[:1]
     ell += ell[:1]
-    fig = plt.figure(figsize=(8.4, 6.4), facecolor="#FBF8FE")
+    fig = plt.figure(figsize=(8.4, 5.7), facecolor="#FBF8FE")
     ax = plt.subplot(111, polar=True)
     ax.set_facecolor("white")
     ax.set_theta_offset(math.pi / 2)
@@ -1639,9 +1644,9 @@ def get_radar_png_bytes(dims: Dict[str, Dict[str, float]]) -> Optional[bytes]:
     ax.set_yticklabels(["2", "4", "6", "8", "10"], fontsize=8)
     ax.set_ylim(0, 10)
     ax.plot(angles, kte, linewidth=2.5, color="#5B2C83")
-    ax.fill(angles, kte, color="#5B2C83", alpha=0.18)
+    ax.fill(angles, kte, color="#5B2C83", alpha=0.12)
     ax.plot(angles, ell, linewidth=2.0, color="#9D8ABA", linestyle="--")
-    ax.fill(angles, ell, color="#B7A3C9", alpha=0.18)
+    ax.fill(angles, ell, color="#B7A3C9", alpha=0.08)
     ax.legend(["KTE", "ELL"], loc="upper right", bbox_to_anchor=(1.18, 1.12), frameon=False)
     fig.suptitle("7 dimenziós radar", fontsize=15, fontweight="bold", color="#2F1D4A")
     fig.tight_layout()
@@ -1674,12 +1679,14 @@ def get_strategy_map_png_bytes(selected_a: Optional[str] = None, selected_b: Opt
     if not MATPLOTLIB_AVAILABLE:
         return svg_to_png_bytes(get_strategy_map_svg(selected_a, selected_b), 1800)
     rows = strategy_scatter_data(selected_a, selected_b)
-    fig, ax = plt.subplots(figsize=(9.2, 4.8), facecolor="#FBF8FE")
+    fig, ax = plt.subplots(figsize=(9.2, 5.2), facecolor="#FBF8FE")
     ax.set_facecolor("white")
     color_map = {"Paletta": "#5B2C83", "Plan A": "#E0A500", "Plan B": "#2AA7A1"}
     for row in rows:
-        ax.scatter(row["x"], row["y"], s=140, color=color_map.get(row["marker_type"], "#5B2C83"))
-        ax.text(row["x"], row["y"] + 0.10, row["code"], ha="center", va="bottom", fontsize=9, fontweight="bold")
+        size = 210 if row["marker_type"] != "Paletta" else 130
+        edge = "#2F1D4A" if row["marker_type"] != "Paletta" else "white"
+        ax.scatter(row["x"], row["y"], s=size, color=color_map.get(row["marker_type"], "#5B2C83"), edgecolors=edge, linewidths=1.0, zorder=3)
+        ax.text(row["x"], row["y"], row["code"], ha="center", va="center", fontsize=8.5, fontweight="bold", color="white" if row["marker_type"] != "Paletta" else "#F8F5FC", zorder=4)
     ax.set_xlim(0.5, 6.5)
     ax.set_ylim(0.5, 5.5)
     ax.set_xticks([1, 2, 3, 4, 5, 6])
@@ -1688,6 +1695,8 @@ def get_strategy_map_png_bytes(selected_a: Optional[str] = None, selected_b: Opt
     ax.set_yticklabels(["Mély", "Alacsony-közép", "Közép", "Közép-magas", "Magas"], fontsize=9)
     ax.grid(alpha=0.25)
     ax.set_title("Stratégiai térkép", fontsize=15, fontweight="bold", color="#2F1D4A")
+    ax.text(3.5, 5.72, "Blokkmagasság: mély → magas", ha="center", va="bottom", fontsize=9, color="#5C4A7A")
+    ax.text(3.5, 0.22, "Játékstílus: direkt → kontroll", ha="center", va="top", fontsize=9, color="#5C4A7A")
     fig.tight_layout()
     return fig_to_png_bytes(fig)
 
@@ -1920,10 +1929,10 @@ def _pdf_draw_page_bg(c, width, height, title):
     c.drawCentredString(42, height - 64, "KTE")
     c.setFillColor(colors.HexColor("#2F1D4A"))
     c.setFont(PDF_FONT_BOLD_NAME, 22)
-    c.drawString(70, height - 54, title)
+    c.drawString(70, height - 54, pdf_safe_text(title))
     c.setFillColor(colors.HexColor("#6E5A87"))
     c.setFont(PDF_FONT_NAME, 10)
-    c.drawString(70, height - 72, "Adatalapú briefing · 7 dimenzió · 9 stratégia")
+    c.drawString(70, height - 72, pdf_safe_text("Adatalapú briefing · 7 dimenzió · 9 stratégia"))
     c.setFillColor(colors.HexColor("#D8C7EB"))
     c.circle(width - 38, height - 48, 8, stroke=0, fill=1)
     c.circle(width - 62, height - 72, 5, stroke=0, fill=1)
@@ -1941,12 +1950,12 @@ def _pdf_draw_wrapped(c, text, x, y, width, font_name=None, font_size=10.5, colo
         if not raw:
             lines.append("")
             continue
-        wrapped = simpleSplit(raw, font_name, font_size, width - (10 if bullet else 0))
+        wrapped = simpleSplit(pdf_safe_text(raw), font_name, font_size, width - (10 if bullet else 0))
         if bullet and wrapped:
             lines.append("• " + wrapped[0])
             lines.extend(["  " + w for w in wrapped[1:]])
         else:
-            lines.extend(wrapped or [raw])
+            lines.extend(wrapped or [pdf_safe_text(raw)])
     if max_lines is not None:
         lines = lines[:max_lines]
     text_obj = c.beginText(x, y)
@@ -1963,7 +1972,7 @@ def _pdf_draw_card(c, x, y_top, w, h, title, body_lines, fill="#FFFFFF"):
     c.roundRect(x, y_top - h, w, h, 14, stroke=0, fill=1)
     c.setFillColor(colors.HexColor("#2F1D4A"))
     c.setFont(PDF_FONT_BOLD_NAME, 12)
-    c.drawString(x + 12, y_top - 20, title)
+    c.drawString(x + 12, y_top - 20, pdf_safe_text(title))
     yy = y_top - 38
     for item in body_lines:
         yy = _pdf_draw_wrapped(c, item, x + 12, yy, w - 24, font_size=10.0, color="#35254E", leading=12.5, bullet=True) - 2
@@ -1975,9 +1984,9 @@ def _pdf_draw_radar_chart(c, dims, x, y_bottom, w, h):
     labels = list(dims.keys())
     if not labels:
         return False
-    cx = x + w * 0.46
-    cy = y_bottom + h * 0.50
-    radius = min(w * 0.30, h * 0.32)
+    cx = x + w * 0.50
+    cy = y_bottom + h * 0.53
+    radius = min(w * 0.24, h * 0.27)
     rings = 5
     c.setStrokeColor(colors.HexColor("#D8C7EB"))
     c.setLineWidth(0.8)
@@ -2001,7 +2010,7 @@ def _pdf_draw_radar_chart(c, dims, x, y_bottom, w, h):
         ly = cy + (radius + 22) * math.sin(ang)
         c.setFillColor(colors.HexColor("#35254E"))
         c.setFont(PDF_FONT_NAME, 8.5)
-        c.drawCentredString(lx, ly, labels[i])
+        c.drawCentredString(lx, ly, pdf_safe_text(labels[i]))
     for value in [2, 4, 6, 8, 10]:
         ry = cy + radius * value / 10
         c.setFont(PDF_FONT_NAME, 7.5)
@@ -2027,8 +2036,9 @@ def _pdf_draw_radar_chart(c, dims, x, y_bottom, w, h):
         c.setFillColor(colors.HexColor(fill_hex))
         c.drawPath(p, stroke=1, fill=1)
 
+    c.setFillAlpha(0.10)
     draw_poly(poly_points("ELL"), "#9D8ABA", "#E6DDF2")
-    c.setFillAlpha(0.55)
+    c.setFillAlpha(0.16)
     draw_poly(poly_points("KTE"), "#5B2C83", "#D6C3EA")
     c.setFillAlpha(1)
 
@@ -2043,7 +2053,7 @@ def _pdf_draw_radar_chart(c, dims, x, y_bottom, w, h):
     c.setFillColor(colors.HexColor("#9D8ABA"))
     c.circle(lx + 58, ly, 4, stroke=0, fill=1)
     c.setFillColor(colors.HexColor("#35254E"))
-    c.drawString(lx + 68, ly - 3, "Ellenfél")
+    c.drawString(lx + 68, ly - 3, pdf_safe_text("Ellenfél"))
     return True
 
 
@@ -2079,7 +2089,7 @@ def _pdf_draw_bar_chart(c, dims, x, y_bottom, w, h):
         c.saveState()
         c.translate(center, bottom - 8)
         c.rotate(25)
-        c.drawString(0, 0, label)
+        c.drawString(0, 0, pdf_safe_text(label))
         c.restoreState()
     return True
 
@@ -2097,16 +2107,16 @@ def _pdf_draw_strategy_map(c, selected_a, selected_b, x, y_bottom, w, h):
     for i in range(1, 6):
         yy = bottom + (top-bottom) * (i-1) / 4
         c.line(left, yy, right, yy)
-    xlabels = ["Direkt", "D/P", "Vegyes", "Kiegy.", "Kontroll", "Agresszív"]
+    xlabels = ["Direkt", "Direkt+pressz.", "Vegyes", "Kiegy.", "Kontroll", "Agresszív"]
     ylabels = ["Mély", "Alacsony-közép", "Közép", "Közép-magas", "Magas"]
     c.setFont(PDF_FONT_NAME, 7.8)
     c.setFillColor(colors.HexColor("#35254E"))
     for i, lab in enumerate(xlabels):
         xx = left + (right-left) * i / 5
-        c.drawCentredString(xx, bottom - 16, lab)
+        c.drawCentredString(xx, bottom - 16, pdf_safe_text(lab))
     for i, lab in enumerate(ylabels):
         yy = bottom + (top-bottom) * i / 4
-        c.drawRightString(left - 8, yy - 3, lab)
+        c.drawRightString(left - 8, yy - 3, pdf_safe_text(lab))
     color_map = {"Paletta": "#5B2C83", "Plan A": "#E0A500", "Plan B": "#2AA7A1"}
     for row in rows:
         xx = left + (right-left) * (row["x"] - 1) / 5
@@ -2115,18 +2125,20 @@ def _pdf_draw_strategy_map(c, selected_a, selected_b, x, y_bottom, w, h):
         c.circle(xx, yy, 7 if row["marker_type"] != "Paletta" else 5.5, stroke=0, fill=1)
         c.setFillColor(colors.white if row["marker_type"] != "Paletta" else colors.HexColor("#F6F1FB"))
         c.setFont(PDF_FONT_BOLD_NAME if row["marker_type"] != "Paletta" else PDF_FONT_NAME, 6.8)
-        c.drawCentredString(xx, yy - 2.3, row["code"])
+        c.drawCentredString(xx, yy - 2.3, pdf_safe_text(row["code"]))
     return True
 
 
 def _pdf_draw_chart_panel(c, kind, png_bytes, x, y_bottom, w, h, dims=None, selected_a=None, selected_b=None):
     c.setFillColor(colors.white)
     c.roundRect(x, y_bottom, w, h, 14, stroke=0, fill=1)
+    pad_x = 12
+    pad_y = 14
     if png_bytes:
         try:
             img = ImageReader(io.BytesIO(png_bytes))
             iw, ih = img.getSize()
-            scale = min(w / iw, h / ih)
+            scale = min((w - 2 * pad_x) / iw, (h - 2 * pad_y) / ih)
             dw, dh = iw * scale, ih * scale
             dx = x + (w - dw) / 2
             dy = y_bottom + (h - dh) / 2
@@ -2144,7 +2156,7 @@ def _pdf_draw_chart_panel(c, kind, png_bytes, x, y_bottom, w, h, dims=None, sele
     if not ok:
         c.setFillColor(colors.HexColor("#7E6A98"))
         c.setFont(PDF_FONT_NAME, 11)
-        c.drawCentredString(x + w/2, y_bottom + h/2, "A diagram betöltése nem sikerült.")
+        c.drawCentredString(x + w/2, y_bottom + h/2, pdf_safe_text("A diagram betöltése nem sikerült."))
 
 
 def _pdf_draw_image_fit(c, png_bytes, x, y_bottom, w, h):
@@ -2153,7 +2165,7 @@ def _pdf_draw_image_fit(c, png_bytes, x, y_bottom, w, h):
     if not png_bytes:
         c.setFillColor(colors.HexColor("#7E6A98"))
         c.setFont(PDF_FONT_NAME, 11)
-        c.drawCentredString(x + w/2, y_bottom + h/2, "A diagram ebben a környezetben nem renderelhető.")
+        c.drawCentredString(x + w/2, y_bottom + h/2, pdf_safe_text("A diagram ebben a környezetben nem renderelhető."))
         return
     try:
         img = ImageReader(io.BytesIO(png_bytes))
@@ -2166,7 +2178,7 @@ def _pdf_draw_image_fit(c, png_bytes, x, y_bottom, w, h):
     except Exception:
         c.setFillColor(colors.HexColor("#7E6A98"))
         c.setFont(PDF_FONT_NAME, 11)
-        c.drawCentredString(x + w/2, y_bottom + h/2, "A diagram betöltése nem sikerült.")
+        c.drawCentredString(x + w/2, y_bottom + h/2, pdf_safe_text("A diagram betöltése nem sikerült."))
 
 def build_pdf_export_bytes(package: Dict[str, object]) -> bytes:
     if not REPORTLAB_AVAILABLE:
@@ -2215,7 +2227,7 @@ def build_pdf_export_bytes(package: Dict[str, object]) -> bytes:
         ("Stratégiai térkép", "strategy", get_strategy_map_png_bytes(p1["plan_a"], p1["plan_b"])),
     ]:
         _pdf_draw_page_bg(c, width, height, title)
-        _pdf_draw_chart_panel(c, kind, png, 30, 95, width - 60, height - 160, dims=p1["dimensions"], selected_a=p1["plan_a"], selected_b=p1["plan_b"])
+        _pdf_draw_chart_panel(c, kind, png, 42, 155, width - 84, height - 270, dims=p1["dimensions"], selected_a=p1["plan_a"], selected_b=p1["plan_b"])
         c.showPage()
 
     _pdf_draw_page_bg(c, width, height, "Matchup-kép és kulcspontok")
@@ -2262,7 +2274,7 @@ def build_pdf_export_bytes(package: Dict[str, object]) -> bytes:
         c.setFillColor(colors.HexColor("#35254E"))
         xx = table_x + 8
         for i, cell in enumerate([dim, str(vals["KTE"]), str(vals["ELL"]), str(vals["Edge"])]):
-            c.drawString(xx, y - 12, cell)
+            c.drawString(xx, y - 12, pdf_safe_text(cell))
             xx += col_w[i]
         y -= row_h
     c.save()
