@@ -11,14 +11,21 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 REPORTLAB_AVAILABLE = True
+SVGLIB_AVAILABLE = True
 try:
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.units import mm
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 except Exception:
     REPORTLAB_AVAILABLE = False
+
+try:
+    from svglib.svglib import svg2rlg
+    from reportlab.graphics import renderPDF
+except Exception:
+    SVGLIB_AVAILABLE = False
 
 st.set_page_config(page_title="Tactical Briefing Engine", layout="wide")
 
@@ -1327,6 +1334,95 @@ def summarize_danger_players(key_player_threats: Dict[str, List[dict]]) -> List[
     return summaries
 
 
+def build_full_conclusion(package: Dict[str, object]) -> List[str]:
+    p1 = package["page_1_onepager"]
+    p3 = package["page_3_tactical_overview"]
+    coach = package.get("coach_controls", {}) or {}
+    ds = package.get("decision_support", {}) or {}
+    dims = p1.get("dimensions", {})
+
+    sorted_dims = sorted(
+        [(dim, vals.get("Edge", 0)) for dim, vals in dims.items()],
+        key=lambda x: abs(float(x[1])),
+        reverse=True,
+    )
+    top_edges = sorted_dims[:2]
+    edge_texts = []
+    for dim, edge in top_edges:
+        if edge > 0:
+            edge_texts.append(f"KTE-előny a(z) {dim.lower()} dimenzióban")
+        elif edge < 0:
+            edge_texts.append(f"ellenfél-előny a(z) {dim.lower()} dimenzióban")
+
+    bullets = []
+    bullets.append(
+        f"A matchup alapján a fő terv: {p1.get('plan_a', 'n.a.')} ({p1.get('plan_split', 'n.a.')}) , kiegészítő opció: {p1.get('plan_b', 'n.a.')}."
+    )
+    if edge_texts:
+        bullets.append("A 7 dimenziós profil legfontosabb olvasata: " + "; ".join(edge_texts) + ".")
+    if coach.get("build_up_solution") or coach.get("defensive_block"):
+        bullets.append(
+            f"Ajánlott játékkeret: {coach.get('build_up_solution', 'n.a.')} build-up, {coach.get('defensive_block', 'n.a.')} blokk, {coach.get('match_scenario', 'n.a.')} meccsdinamika."
+        )
+    danger = summarize_danger_players(p3.get("key_player_threats", {}))
+    if danger:
+        bullets.append("Legveszélyesebb ellenfél-faktorok: " + "; ".join([x.split(' – ')[0] for x in danger[:3]]) + ".")
+    if ds.get("executive_summary"):
+        bullets.append(str(ds.get("executive_summary")))
+    recs = ds.get("recommendation", [])
+    if recs:
+        bullets.append("Vezetői döntési fókusz: " + "; ".join(recs[:2]) + ".")
+    if p1.get("conclusion"):
+        bullets.append(str(p1["conclusion"]))
+
+    clean = []
+    seen = set()
+    for b in bullets:
+        s = str(b).strip()
+        if s and s not in seen:
+            clean.append(s)
+            seen.add(s)
+    return clean[:6]
+
+
+def get_full_conclusion_text(package: Dict[str, object]) -> str:
+    return " \n".join([f"- {x}" for x in build_full_conclusion(package)])
+
+
+def fit_drawing_to_width(drawing, max_width, max_height=None):
+    if drawing is None:
+        return None
+    width = getattr(drawing, 'width', None) or 1
+    height = getattr(drawing, 'height', None) or 1
+    scale = max_width / width
+    if max_height:
+        scale = min(scale, max_height / height)
+    drawing.width = width * scale
+    drawing.height = height * scale
+    drawing.scale(scale, scale)
+    return drawing
+
+
+def svg_string_to_drawing(svg_string: str, max_width_pts: float, max_height_pts: Optional[float] = None):
+    if not (REPORTLAB_AVAILABLE and SVGLIB_AVAILABLE):
+        return None
+    import tempfile
+    with tempfile.NamedTemporaryFile('w', suffix='.svg', delete=False, encoding='utf-8') as tmp:
+        tmp.write(svg_string)
+        tmp_path = tmp.name
+    try:
+        drawing = svg2rlg(tmp_path)
+        drawing = fit_drawing_to_width(drawing, max_width_pts, max_height_pts)
+        return drawing
+    except Exception:
+        return None
+    finally:
+        try:
+            Path(tmp_path).unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
 def get_bar_chart_svg(dims: Dict[str, Dict[str, float]]) -> str:
     labels = list(dims.keys())
     width = 980
@@ -1437,6 +1533,7 @@ def build_html_export(package: Dict[str, object]) -> str:
     radar_svg = get_radar_svg(dims)
     bar_svg = get_bar_chart_svg(dims)
     map_svg = get_strategy_map_svg(p1["plan_a"], p1["plan_b"])
+    final_summary = build_full_conclusion(package)
 
     def bullets(items):
         return ''.join(f'<li>{x}</li>' for x in items) or '<li>n.a.</li>'
@@ -1449,7 +1546,8 @@ def build_html_export(package: Dict[str, object]) -> str:
     return f"""<html><head><meta charset='utf-8'><title>Tactical Briefing</title>
     <style>
     body {{ font-family: Arial, sans-serif; background:#F4F1F8; color:#1E1630; margin:0; padding:24px; }}
-    .page {{ background:white; border-radius:18px; padding:24px; margin-bottom:20px; box-shadow:0 10px 30px rgba(43,25,72,.08); }}
+    .page {{ background:white; border-radius:18px; padding:24px; margin-bottom:20px; box-shadow:0 10px 30px rgba(43,25,72,.08); page-break-after: always; }}
+    .page:last-child {{ page-break-after: auto; }}
     .grid2 {{ display:grid; grid-template-columns:1fr 1fr; gap:18px; }}
     .grid3 {{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:18px; }}
     .card {{ background:#F8F5FC; border:1px solid #E1D8EE; border-radius:14px; padding:16px; }}
@@ -1458,7 +1556,6 @@ def build_html_export(package: Dict[str, object]) -> str:
     th,td {{ border:1px solid #E1D8EE; padding:8px; text-align:left; }}
     th {{ background:#EEE8F5; }}
     ul {{ margin:8px 0 0 18px; }}
-    .chip {{ display:inline-block; background:#EEE8F5; padding:6px 10px; border-radius:999px; margin:4px 6px 0 0; font-size:12px; }}
     .hero {{ display:flex; justify-content:space-between; gap:18px; align-items:flex-start; }}
     </style></head><body>
     <div class='page'>
@@ -1475,14 +1572,15 @@ def build_html_export(package: Dict[str, object]) -> str:
           <strong>Blokk:</strong> {coach.get('defensive_block', 'n.a.')}
         </div>
       </div>
+      <div class='card' style='margin-top:18px'>
+        <h2>Teljes konklúzió</h2>
+        <ul>{bullets(final_summary)}</ul>
+      </div>
     </div>
 
-    <div class='page'>
-      <h2>Három fő diagram</h2>
-      <div class='card'>{radar_svg}</div>
-      <div class='card' style='margin-top:16px'>{bar_svg}</div>
-      <div class='card' style='margin-top:16px'>{map_svg}</div>
-    </div>
+    <div class='page'><h2>7 dimenziós radar</h2><div class='card'>{radar_svg}</div></div>
+    <div class='page'><h2>Dimenzió összehasonlítás</h2><div class='card'>{bar_svg}</div></div>
+    <div class='page'><h2>Stratégiai térkép</h2><div class='card'>{map_svg}</div></div>
 
     <div class='page'>
       <h2>7 dimenziós összehasonlítás</h2>
@@ -1533,7 +1631,6 @@ def build_pdf_export_bytes(package: Dict[str, object]) -> bytes:
     heading = styles["Heading2"]
     body = styles["BodyText"]
     body.spaceAfter = 6
-    small = ParagraphStyle("small", parent=body, fontSize=9, leading=12)
 
     story = []
     p1 = package["page_1_onepager"]
@@ -1552,13 +1649,35 @@ def build_pdf_export_bytes(package: Dict[str, object]) -> bytes:
     ]
     tbl = Table(meta, colWidths=[35 * mm, 140 * mm])
     tbl.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.whitesmoke),
         ("GRID", (0, 0), (-1, -1), 0.4, colors.lightgrey),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
     ]))
     story.append(tbl)
     story.append(Spacer(1, 10))
+
+    story.append(Paragraph("Teljes konklúzió", heading))
+    for item in build_full_conclusion(package):
+        story.append(Paragraph(f"- {item}", body))
+    story.append(PageBreak())
+
+    if SVGLIB_AVAILABLE:
+        max_w = doc.width
+        charts = [
+            ("7 dimenziós radar", get_radar_svg(p1["dimensions"]), 240 * mm),
+            ("Dimenzió összehasonlítás", get_bar_chart_svg(p1["dimensions"]), 120 * mm),
+            ("Stratégiai térkép", get_strategy_map_svg(p1["plan_a"], p1["plan_b"]), 130 * mm),
+        ]
+        for idx, (title, svg, max_h) in enumerate(charts):
+            story.append(Paragraph(title, heading))
+            drawing = svg_string_to_drawing(svg, max_w, max_h)
+            if drawing is not None:
+                story.append(drawing)
+            else:
+                story.append(Paragraph("[Diagram nem renderelhető ebben a környezetben]", body))
+            if idx < len(charts) - 1:
+                story.append(PageBreak())
+        story.append(PageBreak())
 
     story.append(Paragraph("7 dimenziós összehasonlítás", heading))
     dim_rows = [["Dimenzió", "KTE", "ELL", "Edge"]]
@@ -1588,26 +1707,35 @@ def build_pdf_export_bytes(package: Dict[str, object]) -> bytes:
 
     story.append(Paragraph("3 kulcs", heading))
     for item in p1["three_keys"]:
-        story.append(Paragraph(f"• {item}", body))
+        story.append(Paragraph(f"- {item}", body))
 
     story.append(Spacer(1, 4))
     story.append(Paragraph("Kockázatok", heading))
     for item in p1["risks"]:
-        story.append(Paragraph(f"• {item}", body))
+        story.append(Paragraph(f"- {item}", body))
 
     story.append(Spacer(1, 4))
     story.append(Paragraph("Várható meccsdinamika", heading))
     for item in p3["match_dynamics"]:
-        story.append(Paragraph(f"• {item}", body))
+        story.append(Paragraph(f"- {item}", body))
 
     story.append(Spacer(1, 4))
     story.append(Paragraph("Legveszélyesebb ellenfél-játékosok", heading))
     danger = summarize_danger_players(p3.get("key_player_threats", {}))
     if danger:
         for item in danger:
-            story.append(Paragraph(f"• {item}", body))
+            story.append(Paragraph(f"- {item}", body))
     else:
-        story.append(Paragraph("• nincs kiemelt veszélyforrás azonosítva", body))
+        story.append(Paragraph("- nincs kiemelt veszélyforrás azonosítva", body))
+
+    ds = package.get("decision_support", {}) or {}
+    if ds:
+        story.append(Spacer(1, 4))
+        story.append(Paragraph("Taktikai döntési blokk", heading))
+        if ds.get("executive_summary"):
+            story.append(Paragraph(str(ds.get("executive_summary")), body))
+        for item in ds.get("recommendation", [])[:4]:
+            story.append(Paragraph(f"- {item}", body))
 
     doc.build(story)
     pdf = buffer.getvalue()
@@ -1692,6 +1820,10 @@ def build_markdown_export(package: Dict[str, object]) -> str:
     md.append("### Konklúzió")
     md.append(p1["conclusion"])
     md.append("")
+    md.append("### Teljes konklúzió")
+    for x in build_full_conclusion(package):
+        md.append(f"- {x}")
+    md.append("")
     md.append("### Coach controlok")
     for k, v in package.get("coach_controls", {}).items():
         md.append(f"- {k}: {v}")
@@ -1748,6 +1880,9 @@ def render_export_preview(package: Dict[str, object]):
 
     st.markdown("### Briefing deck preview")
     st.info(get_methodology_summary())
+    st.markdown("### Teljes konklúzió - ha csak ezt olvassa az edző")
+    for x in build_full_conclusion(package):
+        st.write(f"- {x}")
 
     top1, top2, top3 = st.columns([1.1, 1.1, 1])
     with top1:
@@ -2623,7 +2758,7 @@ if step == "4. Export Prep":
         render_methodology_block()
         st.header("Export Prep – template előkészítés")
         if not REPORTLAB_AVAILABLE:
-            st.warning("A reportlab nincs telepítve, ezért a PDF gomb szöveges fallback fájlt ad vissza. HTML export viszont működik.")
+            st.warning("A reportlab nincs telepítve, ezért a PDF gomb szöveges fallback fájlt ad vissza. A teljes, diagramokat is tartalmazó export ilyenkor a HTML fájlban látszik.")
 
         coach_controls = {
             "primary_model": st.session_state["coach_primary_model"],
