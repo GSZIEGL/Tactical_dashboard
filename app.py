@@ -2793,23 +2793,23 @@ st.markdown("""
 [data-testid="stSidebar"] * { color:#18212F !important; }
 h1,h2,h3,h4,p,li,span,label,div { color:#18212F; }
 .summary-shell { margin-top: .65rem; }
-.summary-card { background:rgba(255,255,255,.97); border:1px solid #E7DEF8; border-radius:20px; padding:16px 18px; box-shadow:0 12px 28px rgba(76,46,131,.07); margin-bottom:12px; }
 .summary-kpi { display:grid; grid-template-columns:1fr 1fr .9fr; gap:12px; background:transparent; border:none; padding:0; margin-bottom:12px; }
-.summary-kpi .k { background:rgba(255,255,255,.97); border:1px solid #E7DEF8; border-radius:20px; padding:14px 16px; box-shadow:0 10px 24px rgba(76,46,131,.06); min-height:108px; }
+.summary-kpi .k { background:rgba(255,255,255,.98); border:1px solid #E7DEF8; border-radius:20px; padding:14px 16px; box-shadow:0 10px 24px rgba(76,46,131,.06); min-height:108px; }
 .summary-kpi .n { font-size:1.5rem; font-weight:800; color:#4B2E83; line-height:1.05; margin:3px 0 6px 0; }
 .summary-note { color:#5B6474; font-size:.92rem; line-height:1.35; }
-.summary-title { margin-top: .9rem; margin-bottom: .7rem; }
 .summary-grid-tight { display:grid; grid-template-columns:1.2fr .85fr; gap:12px; }
 .summary-micro { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
 .summary-pill { background:#F2ECFF; color:#4B2E83; border:1px solid #DED1FF; padding:5px 10px; border-radius:999px; font-size:.82rem; font-weight:600; }
-.summary-card h3, .summary-card h4 { margin-bottom:.35rem; }
+.print-keep-together { break-inside: avoid; page-break-inside: avoid; margin-bottom: 10px; }
 @media (max-width: 980px) {
   .summary-kpi { grid-template-columns:1fr; }
   .summary-grid-tight { grid-template-columns:1fr; }
 }
 @media print {
   html, body, [data-testid="stAppViewContainer"], .stApp { background:#F6F1FF !important; color:#111111 !important; }
-  .kte-hero, .summary-card, .summary-kpi .k { background:#FFFFFF !important; box-shadow:none !important; }
+  .kte-hero, .summary-kpi .k { background:#FFFFFF !important; box-shadow:none !important; }
+  .print-keep-together { break-inside: avoid; page-break-inside: avoid; }
+  h1, h2, h3, h4, h5 { break-after: avoid; page-break-after: avoid; }
 }
 </style>
 """, unsafe_allow_html=True)
@@ -3349,7 +3349,7 @@ def render_summary_page(package: Dict[str, object]):
     mode_label = "korrigált döntési profil" if p1.get("dimension_mode") == "adjusted" else "alap matchup-profil"
 
     st.markdown("<div class='summary-shell'>", unsafe_allow_html=True)
-    st.markdown("<div class='summary-title'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:0.45rem;'></div>", unsafe_allow_html=True)
     st.markdown("### Vezetői összegző")
 
     st.markdown(f"""
@@ -3374,55 +3374,48 @@ def render_summary_page(package: Dict[str, object]):
 
     top_left, top_right = st.columns([1.25, 0.9])
     with top_left:
-        st.markdown("<div class='summary-card'>", unsafe_allow_html=True)
-        st.markdown("#### 🎯 Teljes konklúzió")
+        st.subheader("🎯 Teljes konklúzió")
         for line in conclusion_lines[:5]:
             st.write(f"• {line}")
-        st.markdown("<div class='summary-micro'>", unsafe_allow_html=True)
-        st.markdown(f"<span class='summary-pill'>Plan A: {pdf_safe_text(p1.get('plan_a','-'))}</span><span class='summary-pill'>Plan B: {pdf_safe_text(p1.get('plan_b','-'))}</span><span class='summary-pill'>Arány: {pdf_safe_text(p1.get('plan_split','-'))}</span>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown(
+            f"<div class='summary-micro'><span class='summary-pill'>Plan A: {pdf_safe_text(p1.get('plan_a','-'))}</span>"
+            f"<span class='summary-pill'>Plan B: {pdf_safe_text(p1.get('plan_b','-'))}</span>"
+            f"<span class='summary-pill'>Arány: {pdf_safe_text(p1.get('plan_split','-'))}</span></div>",
+            unsafe_allow_html=True
+        )
 
     with top_right:
-        st.markdown("<div class='summary-card'>", unsafe_allow_html=True)
-        st.markdown("#### ⚠️ 3 kulcs és fő kockázatok")
+        st.subheader("⚠️ 3 kulcs és fő kockázatok")
         for item in p1.get('three_keys', [])[:3]:
             st.write(f"• Kulcs: {item}")
         for item in p1.get('risks', [])[:2]:
             st.write(f"• Kockázat: {item}")
-        st.markdown("</div>", unsafe_allow_html=True)
 
     info_left, info_right = st.columns([1.05, 0.95])
     with info_left:
-        st.markdown("<div class='summary-card'>", unsafe_allow_html=True)
-        st.markdown("#### 🧠 Módszertan röviden")
+        st.subheader("🧠 Módszertan röviden")
         st.write(get_methodology_summary())
-        st.markdown("</div>", unsafe_allow_html=True)
 
     with info_right:
-        st.markdown("<div class='summary-card'>", unsafe_allow_html=True)
-        st.markdown("#### 🚨 Legveszélyesebb ellenfél-játékosok")
+        st.subheader("🚨 Legveszélyesebb ellenfél-játékosok")
         if danger:
             for item in danger[:3]:
                 st.write(f"• {item}")
         else:
             st.write("Nincs elérhető játékosveszély-lista.")
-        st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("#### 📊 Vizualizációk")
+    st.markdown("<div class='print-keep-together'>", unsafe_allow_html=True)
     c1, c2 = st.columns([1, 1])
     with c1:
-        st.markdown("<div class='summary-card'>", unsafe_allow_html=True)
         st.markdown("##### 7 dimenziós profil")
         render_radar_svg(dims)
-        st.markdown("</div>", unsafe_allow_html=True)
     with c2:
-        st.markdown("<div class='summary-card'>", unsafe_allow_html=True)
         st.markdown("##### Dimenziók összehasonlítása")
         render_bar_chart(dims)
-        st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("<div class='summary-card'>", unsafe_allow_html=True)
+    st.markdown("<div class='print-keep-together'>", unsafe_allow_html=True)
     st.markdown("##### 9 stratégia térképe")
     render_strategy_map(p1.get("plan_a"), p1.get("plan_b"))
     st.markdown("</div>", unsafe_allow_html=True)
@@ -3472,7 +3465,6 @@ if step == "5. Összegző oldal":
             decision_support=st.session_state.get("decision_support"),
         )
         render_summary_page(package)
-        st.info("Ezt az oldalt érdemes képernyőfotózni vagy nyomtatási nézetben használni, ha a PDF export még nem ad elég jó minőséget.")
 
 
 if step == "4. Export Prep":
