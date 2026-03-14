@@ -2,6 +2,8 @@ import io
 import json
 import math
 import re
+import base64
+from pathlib import Path
 from typing import Dict, Optional, List, Tuple
 
 import altair as alt
@@ -12,12 +14,15 @@ import streamlit.components.v1 as components
 
 REPORTLAB_AVAILABLE = True
 SVGLIB_AVAILABLE = True
+CAIROSVG_AVAILABLE = True
 try:
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.units import mm
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, Image
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
 except Exception:
     REPORTLAB_AVAILABLE = False
 
@@ -27,7 +32,34 @@ try:
 except Exception:
     SVGLIB_AVAILABLE = False
 
+try:
+    import cairosvg
+except Exception:
+    CAIROSVG_AVAILABLE = False
+
 st.set_page_config(page_title="Tactical Briefing Engine", layout="wide")
+
+PDF_FONT_NAME = "Helvetica"
+
+def ensure_pdf_font() -> str:
+    global PDF_FONT_NAME
+    if not REPORTLAB_AVAILABLE:
+        return PDF_FONT_NAME
+    if PDF_FONT_NAME != "Helvetica":
+        return PDF_FONT_NAME
+    candidates = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+    ]
+    for candidate in candidates:
+        if Path(candidate).exists():
+            try:
+                pdfmetrics.registerFont(TTFont("DejaVuSans", candidate))
+                PDF_FONT_NAME = "DejaVuSans"
+                return PDF_FONT_NAME
+            except Exception:
+                pass
+    return PDF_FONT_NAME
 
 
 # =========================================================
@@ -1261,9 +1293,11 @@ def build_decision_support(base_dims, adjusted_dims, controls, team_metrics, opp
     player_focus = controls.get("focus_players", []) or []
 
     executive = (
-        f"A jelenlegi coach-beállítás főleg a következő dimenziókat tolja el: {', '.join(top_changes)}. "
-        f"A döntés logikája: {controls.get('primary_model', '-')}/{controls.get('secondary_model', '-')}, "
-        f"{controls.get('plan_a_emphasis', 60)}/{100-int(controls.get('plan_a_emphasis', 60))} aránnyal."
+        f"A jelenlegi coach-beállítás az alap matchup-képhez képest leginkább ezeket a területeket módosítja: {', '.join(top_changes)}. "
+        f"Ez a gyakorlatban azt jelenti, hogy a választott game plan a {controls.get('primary_model', '-')} alaplogikára épül, "
+        f"mellé {controls.get('secondary_model', '-')} tartalék irányt tart meg, "
+        f"és a terv súlypontja {controls.get('plan_a_emphasis', 60)}/{100-int(controls.get('plan_a_emphasis', 60))} arányban a Plan A felé húz. "
+        f"Vagyis nem fix jóslatot látsz, hanem azt, hogy az eredeti adatalapú profilhoz képest mely taktikai hangsúlyok erősödnek vagy gyengülnek."
     )
 
     recommendation = []
@@ -1295,17 +1329,18 @@ def render_methodology_block():
     with st.expander("Metodika / hogyan dolgozik az app", expanded=False):
         st.markdown(
             """
-Ez az alkalmazás **adatalapú taktikai döntéselőkészítő**, nem szöveges ötletgyűjtő: a match Excel, player Excel és célzott PDF-scouting inputok alapján épít fel egy egységes matchup-képet. A rendszer a csapatokat **7 dimenzió mentén skálázza**, majd ezekből illeszti a meccset a **9 alapstratégia** egyikéhez vagy azok kombinációjához. A javaslat nem egyetlen mutatóból készül, hanem a labdakihozatal, pressing, támadóprofil, pontrúgás, területnyerés és meccsdinamika együttes olvasatából, ezért a briefing mögött konkrét adatstruktúra áll. A döntési logikában van **MI-alapú strukturálás és szabályozott következtetési réteg**, de ugyanúgy beépül a saját szakmai munkád is: a coach-panelen te finomítod a game plant, nem a rendszer ír helyetted szabad szöveget. Így a végtermék egyszerre marad egzakt, exportálható és szakmailag vállalható az edzői stáb felé.
+Ez az alkalmazás **adatalapú taktikai döntéselőkészítő**, amely a match Excel, player Excel és célzott PDF-scouting inputokból épít **egységes matchup-képet**. A rendszer a két csapatot **7 taktikai dimenzió mentén** skálázza: **letámadás, labdakihozatal, átmenetek, támadó játék, pontrúgások, labdabirtoklás, lövésprofil**. Ezekből illeszti a meccset a **9 alapstratégia** egyikéhez vagy kombinációjához: **KON, GAT, BAT, KIE, PRS, MLT, DOM, POZ, LAB**. A javaslat nem egyetlen mutatóból készül, hanem a pressing, build-up, területnyerés, helyzetkialakítás, pontrúgás és meccsdinamika együttes matchup-olvasatából, ezért a briefing mögött konkrét adatstruktúra áll. A döntési logikában van **MI-alapú strukturálás és szabályozott következtetési réteg**, de ugyanúgy beépül a saját szakmai munkád is: a coach-panelen te finomítod a game plant, a rendszer pedig végig következetesen újrasúlyozza a döntési képet.
             """
         )
 
 
 def get_methodology_summary() -> str:
     return (
-        "Ez az alkalmazás adatalapú taktikai döntéselőkészítő: a match Excel, player Excel és célzott PDF-scouting inputok alapján épít fel matchup-profilt. "
-        "A 7 dimenzió és a 9 stratégiai alapkód együtt adja a Plan A / Plan B logikát, ezért a javaslat nem megérzésre, hanem összevethető mutatókra épül. "
-        "A rendszerben MI-alapú strukturálás és szabályozott következtetési réteg is dolgozik, de a coach-felületen a saját szakmai finomhangolásod is megjelenik. "
-        "Így a végtermék egyszerre egzakt, konzisztens és exportálható briefingként használható."
+        "Ez az alkalmazás adatalapú taktikai döntéselőkészítő: a match Excel, player Excel és célzott PDF-scouting inputok alapján épít matchup-profilt. "
+        "A két csapatot 7 taktikai dimenzió mentén értékeli — letámadás, labdakihozatal, átmenetek, támadó játék, pontrúgások, labdabirtoklás, lövésprofil — majd ezeket a 9 alapstratégia egyikéhez vagy kombinációjához illeszti. "
+        "A Plan A / Plan B logika ezért nem megérzésre, hanem összevethető mutatókra és matchup-vizsgálatra épül. "
+        "A rendszerben MI-alapú strukturálás és szabályozott következtetési réteg is dolgozik, miközben a coach-felületen a saját szakmai finomhangolásod is megjelenik. "
+        "Így a végtermék egyszerre egzakt, értelmezhető és exportálható briefingként használható."
     )
 
 
@@ -1422,6 +1457,38 @@ def svg_string_to_drawing(svg_string: str, max_width_pts: float, max_height_pts:
         except Exception:
             pass
 
+def svg_to_png_bytes(svg_string: str, width_px: int = 1600) -> Optional[bytes]:
+    if not CAIROSVG_AVAILABLE:
+        return None
+    try:
+        return cairosvg.svg2png(bytestring=svg_string.encode("utf-8"), output_width=width_px)
+    except Exception:
+        return None
+
+
+def svg_to_base64_img_tag(svg_string: str, alt_text: str, width_style: str = "100%") -> str:
+    png = svg_to_png_bytes(svg_string)
+    if png:
+        b64 = base64.b64encode(png).decode("ascii")
+        return f"<img src='data:image/png;base64,{b64}' alt='{alt_text}' style='width:{width_style}; border-radius:12px;' />"
+    return svg_string
+
+
+def build_reportlab_chart_flowable(svg_string: str, max_width_pts: float, max_height_pts: Optional[float] = None):
+    drawing = svg_string_to_drawing(svg_string, max_width_pts, max_height_pts)
+    if drawing is not None:
+        return drawing
+    png = svg_to_png_bytes(svg_string)
+    if png and REPORTLAB_AVAILABLE:
+        img = Image(io.BytesIO(png))
+        width = getattr(img, "drawWidth", max_width_pts) or max_width_pts
+        height = getattr(img, "drawHeight", max_height_pts or max_width_pts * 0.6) or (max_height_pts or max_width_pts * 0.6)
+        scale = min(max_width_pts / width, (max_height_pts / height) if max_height_pts else 1.0)
+        img.drawWidth = width * scale
+        img.drawHeight = height * scale
+        return img
+    return None
+
 
 def get_bar_chart_svg(dims: Dict[str, Dict[str, float]]) -> str:
     labels = list(dims.keys())
@@ -1533,6 +1600,9 @@ def build_html_export(package: Dict[str, object]) -> str:
     radar_svg = get_radar_svg(dims)
     bar_svg = get_bar_chart_svg(dims)
     map_svg = get_strategy_map_svg(p1["plan_a"], p1["plan_b"])
+    radar_img = svg_to_base64_img_tag(radar_svg, '7 dimenziós radar')
+    bar_img = svg_to_base64_img_tag(bar_svg, 'Dimenzió összehasonlítás')
+    map_img = svg_to_base64_img_tag(map_svg, 'Stratégiai térkép')
     final_summary = build_full_conclusion(package)
 
     def bullets(items):
@@ -1578,9 +1648,9 @@ def build_html_export(package: Dict[str, object]) -> str:
       </div>
     </div>
 
-    <div class='page'><h2>7 dimenziós radar</h2><div class='card'>{radar_svg}</div></div>
-    <div class='page'><h2>Dimenzió összehasonlítás</h2><div class='card'>{bar_svg}</div></div>
-    <div class='page'><h2>Stratégiai térkép</h2><div class='card'>{map_svg}</div></div>
+    <div class='page'><h2>7 dimenziós radar</h2><div class='card'>{radar_img}</div></div>
+    <div class='page'><h2>Dimenzió összehasonlítás</h2><div class='card'>{bar_img}</div></div>
+    <div class='page'><h2>Stratégiai térkép</h2><div class='card'>{map_img}</div></div>
 
     <div class='page'>
       <h2>7 dimenziós összehasonlítás</h2>
@@ -1626,11 +1696,14 @@ def build_pdf_export_bytes(package: Dict[str, object]) -> bytes:
         topMargin=12 * mm,
         bottomMargin=12 * mm,
     )
+    pdf_font_name = ensure_pdf_font()
     styles = getSampleStyleSheet()
     title_style = styles["Title"]
     heading = styles["Heading2"]
     body = styles["BodyText"]
     body.spaceAfter = 6
+    for style in [title_style, heading, body]:
+        style.fontName = pdf_font_name
 
     story = []
     p1 = package["page_1_onepager"]
@@ -1661,23 +1734,22 @@ def build_pdf_export_bytes(package: Dict[str, object]) -> bytes:
         story.append(Paragraph(f"- {item}", body))
     story.append(PageBreak())
 
-    if SVGLIB_AVAILABLE:
-        max_w = doc.width
-        charts = [
-            ("7 dimenziós radar", get_radar_svg(p1["dimensions"]), 240 * mm),
-            ("Dimenzió összehasonlítás", get_bar_chart_svg(p1["dimensions"]), 120 * mm),
-            ("Stratégiai térkép", get_strategy_map_svg(p1["plan_a"], p1["plan_b"]), 130 * mm),
-        ]
-        for idx, (title, svg, max_h) in enumerate(charts):
-            story.append(Paragraph(title, heading))
-            drawing = svg_string_to_drawing(svg, max_w, max_h)
-            if drawing is not None:
-                story.append(drawing)
-            else:
-                story.append(Paragraph("[Diagram nem renderelhető ebben a környezetben]", body))
-            if idx < len(charts) - 1:
-                story.append(PageBreak())
-        story.append(PageBreak())
+    max_w = doc.width
+    charts = [
+        ("7 dimenziós radar", get_radar_svg(p1["dimensions"]), 240 * mm),
+        ("Dimenzió összehasonlítás", get_bar_chart_svg(p1["dimensions"]), 120 * mm),
+        ("Stratégiai térkép", get_strategy_map_svg(p1["plan_a"], p1["plan_b"]), 130 * mm),
+    ]
+    for idx, (title, svg, max_h) in enumerate(charts):
+        story.append(Paragraph(title, heading))
+        flowable = build_reportlab_chart_flowable(svg, max_w, max_h)
+        if flowable is not None:
+            story.append(flowable)
+        else:
+            story.append(Paragraph("[Diagram nem renderelhető ebben a környezetben]", body))
+        if idx < len(charts) - 1:
+            story.append(PageBreak())
+    story.append(PageBreak())
 
     story.append(Paragraph("7 dimenziós összehasonlítás", heading))
     dim_rows = [["Dimenzió", "KTE", "ELL", "Edge"]]
