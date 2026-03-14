@@ -179,6 +179,49 @@ def strategy_scatter_data(selected_a: Optional[str] = None, selected_b: Optional
     return rows
 
 
+
+
+def linked_controls_from_model(model_code: str) -> Dict[str, object]:
+    data = STRATEGY_PALETTE.get(model_code, STRATEGY_PALETTE["KIE"])
+    block_map = {"low": "mély", "low_mid": "mély", "mid": "közepes", "mid_high": "közepes", "high": "magas"}
+    style = data.get("style", "balanced")
+
+    if style == "direct":
+        build_up = "direkt"
+        focus_areas = ["transition"]
+        scenario = "balanced"
+    elif style in ["control", "balanced_control"]:
+        build_up = "rövid"
+        focus_areas = ["build-up"]
+        scenario = "conservative" if data.get("block") in ["low", "low_mid"] else "balanced"
+    elif style == "transition_press":
+        build_up = "vegyes"
+        focus_areas = ["pressing", "transition"]
+        scenario = "aggressive"
+    elif style == "aggressive":
+        build_up = "direkt"
+        focus_areas = ["pressing", "transition"]
+        scenario = "aggressive"
+    else:
+        build_up = "vegyes"
+        focus_areas = ["pressing", "build-up"]
+        scenario = "balanced"
+
+    return {
+        "build_up_solution": build_up,
+        "defensive_block": block_map.get(data.get("block", "mid"), "közepes"),
+        "match_scenario": scenario,
+        "focus_areas": focus_areas,
+    }
+
+
+def apply_linked_coach_controls(model_code: str):
+    linked = linked_controls_from_model(model_code)
+    st.session_state["coach_build_up_solution"] = linked["build_up_solution"]
+    st.session_state["coach_defensive_block"] = linked["defensive_block"]
+    st.session_state["coach_match_scenario"] = linked["match_scenario"]
+    st.session_state["coach_focus_areas"] = linked["focus_areas"]
+
 def render_strategy_map(selected_a: Optional[str] = None, selected_b: Optional[str] = None):
     rows = strategy_scatter_data(selected_a, selected_b)
     spec = {
@@ -1738,6 +1781,7 @@ defaults = {
     "use_adjusted_dims": True,
     "coach_primary_model": "GAT",
     "coach_secondary_model": "BAT",
+    "coach_link_controls": True,
     "coach_focus_areas": [],
     "coach_selected_risks": [],
     "coach_focus_players": [],
@@ -1946,14 +1990,23 @@ if step == "2. Review":
         coach_left, coach_right = st.columns([1.15, 1])
         with coach_left:
             st.subheader("Coach finomhangolás")
+            st.session_state["coach_link_controls"] = st.checkbox(
+                "A játékmodell kapcsolja össze a rész-döntéseket",
+                value=st.session_state.get("coach_link_controls", True),
+                help="Bekapcsolva az elsődleges játékmodell automatikusan javasolja a build-upot, blokkot, meccsdinamikát és fókuszterületeket.",
+            )
+
             c1, c2 = st.columns(2)
             with c1:
+                prev_primary = st.session_state.get("coach_primary_model")
                 st.session_state["coach_primary_model"] = st.selectbox(
                     "Elsődleges játékmodell",
                     options=list(STRATEGY_PALETTE.keys()),
                     index=list(STRATEGY_PALETTE.keys()).index(st.session_state["coach_primary_model"]),
                     format_func=lambda x: f"{x} – {STRATEGY_PALETTE[x]['name']}",
                 )
+                if st.session_state.get("coach_link_controls", True) and st.session_state["coach_primary_model"] != prev_primary:
+                    apply_linked_coach_controls(st.session_state["coach_primary_model"])
             with c2:
                 available_b = [x for x in STRATEGY_PALETTE.keys() if x != st.session_state["coach_primary_model"]]
                 current_b = st.session_state["coach_secondary_model"]
@@ -1966,10 +2019,18 @@ if step == "2. Review":
                     format_func=lambda x: f"{x} – {STRATEGY_PALETTE[x]['name']}",
                 )
 
+            if st.session_state.get("coach_link_controls", True):
+                linked_preview = linked_controls_from_model(st.session_state["coach_primary_model"])
+                st.info(
+                    f"Kapcsolt mód: build-up = {linked_preview['build_up_solution']}, blokk = {linked_preview['defensive_block']}, "
+                    f"meccsdinamika = {linked_preview['match_scenario']}, fókusz = {', '.join(linked_preview['focus_areas'])}."
+                )
+
             st.session_state["coach_focus_areas"] = st.multiselect(
                 "Meccskép prioritás",
                 options=["pressing", "build-up", "transition", "set pieces", "rest defense"],
                 default=st.session_state["coach_focus_areas"],
+                disabled=st.session_state.get("coach_link_controls", True),
             )
 
             z1, z2, z3 = st.columns(3)
@@ -1984,12 +2045,14 @@ if step == "2. Review":
                     "Labdakihozatal",
                     ["rövid", "vegyes", "direkt"],
                     index=["rövid", "vegyes", "direkt"].index(st.session_state["coach_build_up_solution"]),
+                    disabled=st.session_state.get("coach_link_controls", True),
                 )
             with z3:
                 st.session_state["coach_defensive_block"] = st.selectbox(
                     "Védelmi blokk",
                     ["mély", "közepes", "magas"],
                     index=["mély", "közepes", "magas"].index(st.session_state["coach_defensive_block"]),
+                    disabled=st.session_state.get("coach_link_controls", True),
                 )
 
             s1, s2 = st.columns(2)
@@ -1998,6 +2061,7 @@ if step == "2. Review":
                     "Meccsdinamika forgatókönyv",
                     ["conservative", "balanced", "aggressive"],
                     index=["conservative", "balanced", "aggressive"].index(st.session_state["coach_match_scenario"]),
+                    disabled=st.session_state.get("coach_link_controls", True),
                 )
             with s2:
                 st.session_state["coach_set_piece_priority"] = st.selectbox(
@@ -2029,11 +2093,15 @@ if step == "2. Review":
                 default=st.session_state["coach_selected_risks"],
             )
 
-            st.session_state["coach_focus_players"] = st.multiselect(
-                "Kulcsjátékos-fókusz",
-                options=player_focus_options(opp_players),
-                default=st.session_state["coach_focus_players"],
-            )
+            fixed_focus_players = player_focus_options(opp_players)[:3]
+            st.session_state["coach_focus_players"] = fixed_focus_players
+            st.markdown("**Fix ellenfél kulcsjátékos-fókusz**")
+            if fixed_focus_players:
+                st.caption("Ez parser-alapú, nem szerkeszthető lista.")
+                for fp in fixed_focus_players:
+                    st.write(f"- {fp}")
+            else:
+                st.caption("Nincs elérhető ellenfél kulcsjátékos lista.")
 
             sync_coach_texts_from_controls()
 
