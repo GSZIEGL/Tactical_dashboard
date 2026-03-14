@@ -2785,19 +2785,26 @@ for k, v in defaults.items():
 
 st.markdown("""
 <style>
-.stApp { background: #FFFFFF; }
-.kte-hero { display:flex; align-items:center; gap:14px; background:#FFFFFF; color:#2F1D4A; padding:16px 18px; border-radius:18px; margin-bottom:14px; border:1px solid #E8E2F0; box-shadow:0 8px 20px rgba(47,29,74,.06); }
-.kte-badge { width:52px; height:52px; border-radius:50%; background:#5B2C83; color:#FFFFFF; display:flex; align-items:center; justify-content:center; font-weight:800; }
+.stApp { background: #FAFBFD; color:#18212F; }
+.kte-hero { display:flex; align-items:center; gap:14px; background:#FFFFFF; color:#18212F; padding:16px 18px; border-radius:18px; margin-bottom:14px; border:1px solid #E6EAF2; box-shadow:0 8px 20px rgba(16,24,40,.05); }
+.kte-badge { width:52px; height:52px; border-radius:50%; background:linear-gradient(135deg,#F3F0FF,#E6E0FF); color:#4B2E83; border:1px solid #D8CEF8; display:flex; align-items:center; justify-content:center; font-weight:800; }
 .block-container { padding-top: 1.2rem; }
-[data-testid="stSidebar"] { background:#FFFFFF; border-right:1px solid #E8E2F0; }
+[data-testid="stSidebar"] { background:#FFFFFF; border-right:1px solid #E6EAF2; }
+[data-testid="stSidebar"] * { color:#18212F !important; }
+h1,h2,h3,h4,p,li,span,label,div { color:#18212F; }
+.summary-card { background:#FFFFFF; border:1px solid #E6EAF2; border-radius:18px; padding:16px; box-shadow:0 10px 24px rgba(16,24,40,.04); margin-bottom:14px; }
+.summary-kpi { background:#F8FAFC; border:1px solid #E7EEF7; border-radius:16px; padding:14px; }
+.summary-kpi-title { font-size:.85rem; color:#475467; }
+.summary-kpi-value { font-size:1.35rem; font-weight:800; color:#4B2E83; }
+.summary-note { color:#475467; font-size:.94rem; }
 </style>
 """, unsafe_allow_html=True)
-st.markdown("""<div class='kte-hero'><div class='kte-badge'>KTE</div><div><div style='font-size:1.55rem;font-weight:800;'>Taktikai döntéselőkészítő ⚽</div><div style='opacity:.85;color:#5F4A7C;'>Adatalapú briefing • 7 dimenzió • 9 stratégia</div></div></div>""", unsafe_allow_html=True)
+st.markdown("""<div class='kte-hero'><div class='kte-badge'>KTE</div><div><div style='font-size:1.55rem;font-weight:800;color:#18212F;'>Taktikai döntéselőkészítő ⚽</div><div style='opacity:.9;color:#475467;'>Adatalapú briefing • 7 dimenzió • 9 stratégia</div></div></div>""", unsafe_allow_html=True)
 st.sidebar.caption("D/P = Direkt / Presszing")
 
 step = st.sidebar.radio(
     "Lépés",
-    ["1. Input", "2. Review", "3. Debug", "4. Export Prep"],
+    ["1. Input", "2. Review", "3. Debug", "4. Export Prep", "5. Összegző oldal"],
     index=0,
 )
 
@@ -3319,6 +3326,128 @@ if step == "3. Debug":
 # =========================================================
 
 
+def render_summary_page(package: Dict[str, object]):
+    p1 = package["page_1_onepager"]
+    p3 = package["page_3_tactical_overview"]
+    ds = package.get("decision_support", {}) or {}
+    dims = p1.get("dimensions", {})
+    danger = summarize_danger_players(p3.get("key_player_threats", {}))
+    conclusion_lines = build_full_conclusion(package)
+
+    st.markdown("<div class='summary-shell'>", unsafe_allow_html=True)
+    st.markdown("### Vezetői összegző oldal")
+    st.caption("Ez az oldal képernyőképezésre, gyors edzői áttekintésre és meccs előtti egyoldalas összefoglalóra van optimalizálva.")
+
+    st.markdown(f"""
+    <div class='summary-kpi'>
+        <div class='k'><div class='summary-note'>Plan A</div><div class='n'>{pdf_safe_text(p1.get('plan_a','-'))}</div><div class='summary-note'>{label_strategy(p1.get('plan_a',''))}</div></div>
+        <div class='k'><div class='summary-note'>Plan B</div><div class='n'>{pdf_safe_text(p1.get('plan_b','-'))}</div><div class='summary-note'>{label_strategy(p1.get('plan_b',''))}</div></div>
+        <div class='k'><div class='summary-note'>Arány</div><div class='n'>{pdf_safe_text(p1.get('plan_split','-'))}</div><div class='summary-note'>{'coach-hatással korrigált' if p1.get('dimension_mode') == 'adjusted' else 'alap matchup profil'}</div></div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    left, right = st.columns([1.2, 0.8])
+    with left:
+        st.markdown("<div class='summary-card'>", unsafe_allow_html=True)
+        st.markdown("#### Teljes konklúzió")
+        for line in conclusion_lines[:6]:
+            st.write(f"• {line}")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        st.markdown("<div class='summary-card'>", unsafe_allow_html=True)
+        st.markdown("#### Módszertan röviden")
+        st.write(get_methodology_summary())
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with right:
+        st.markdown("<div class='summary-card'>", unsafe_allow_html=True)
+        st.markdown("#### Fix ellenfél-veszélyek")
+        if danger:
+            for item in danger[:3]:
+                st.write(f"• {item}")
+        else:
+            st.write("Nincs elérhető játékosveszély-lista.")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        st.markdown("<div class='summary-card'>", unsafe_allow_html=True)
+        st.markdown("#### 3 kulcs és fő kockázatok")
+        for item in p1.get('three_keys', [])[:3]:
+            st.write(f"• Kulcs: {item}")
+        for item in p1.get('risks', [])[:3]:
+            st.write(f"• Kockázat: {item}")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        st.markdown("<div class='summary-card'>", unsafe_allow_html=True)
+        st.markdown("#### Edzői finomhangolás")
+        if ds.get("has_manual_intervention") and ds.get("executive_summary"):
+            st.write(ds.get("executive_summary"))
+        else:
+            st.write("Nincs kézi beavatkozás: jelenleg az alap adatalapú matchup-javaslat érvényes.")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("#### Vizualizációk")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("<div class='summary-card'>", unsafe_allow_html=True)
+        render_radar_svg(dims)
+        st.markdown("</div>", unsafe_allow_html=True)
+    with c2:
+        st.markdown("<div class='summary-card'>", unsafe_allow_html=True)
+        render_bar_chart(dims)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("<div class='summary-card'>", unsafe_allow_html=True)
+    render_strategy_map(p1.get("plan_a"), p1.get("plan_b"))
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+
+if step == "5. Összegző oldal":
+    dims = st.session_state.get("dims")
+    adjusted_dims = st.session_state.get("dims_adjusted")
+    active_dims = adjusted_dims if st.session_state.get("use_adjusted_dims", True) and adjusted_dims else dims
+    opp_players = st.session_state.get("opp_players")
+
+    if not dims:
+        st.warning("Előbb tölts fel adatot az Input fülön.")
+    else:
+        sync_coach_texts_from_controls()
+        package = build_export_package(
+            selected_plan_a=st.session_state["selected_plan_a"],
+            selected_plan_b=st.session_state["selected_plan_b"],
+            selected_split=st.session_state["selected_split"],
+            dims=active_dims,
+            opponent_profile_text=st.session_state["opponent_profile_text"],
+            own_state_text=st.session_state["own_state_text"],
+            three_keys_text=st.session_state["three_keys_text"],
+            risks_text=st.session_state["risks_text"],
+            match_dynamics_text=st.session_state["match_dynamics_text"],
+            conclusion_text=st.session_state["conclusion_text"],
+            opponent_dna_text=st.session_state["opponent_dna_text"],
+            opp_players=opp_players,
+            coach_controls= {
+                "primary_model": st.session_state.get("coach_primary_model"),
+                "secondary_model": st.session_state.get("coach_secondary_model"),
+                "focus_areas": st.session_state.get("coach_focus_areas"),
+                "selected_risks": st.session_state.get("coach_selected_risks"),
+                "focus_players": st.session_state.get("coach_focus_players"),
+                "pressing_zone": st.session_state.get("coach_pressing_zone"),
+                "build_up_solution": st.session_state.get("coach_build_up_solution"),
+                "defensive_block": st.session_state.get("coach_defensive_block"),
+                "match_scenario": st.session_state.get("coach_match_scenario"),
+                "plan_a_emphasis": st.session_state.get("coach_plan_a_emphasis"),
+                "set_piece_priority": st.session_state.get("coach_set_piece_priority"),
+                "second_ball_focus": st.session_state.get("coach_second_ball_focus"),
+                "halfspace_defense_priority": st.session_state.get("coach_halfspace_defense_priority"),
+            },
+            decision_support=st.session_state.get("decision_support"),
+        )
+        render_summary_page(package)
+        st.info("Ezt az oldalt érdemes képernyőfotózni vagy nyomtatási nézetben használni, ha a PDF export még nem ad elég jó minőséget.")
+
+
 if step == "4. Export Prep":
     dims = st.session_state.get("dims")
     adjusted_dims = st.session_state.get("dims_adjusted")
@@ -3331,6 +3460,7 @@ if step == "4. Export Prep":
         sync_coach_texts_from_controls()
         render_methodology_block()
         st.header("Export Prep – template előkészítés")
+        st.caption("Ha a PDF export vizuálisan még nem elég erős, használd az 5. Összegző oldal nézetet: az a képernyőképezhető, egyoldalas briefing felület.")
         if not REPORTLAB_AVAILABLE:
             st.warning("A reportlab nincs telepítve, ezért a PDF gomb szöveges fallback fájlt ad vissza. A teljes, diagramokat is tartalmazó export ilyenkor a HTML fájlban látszik.")
 
