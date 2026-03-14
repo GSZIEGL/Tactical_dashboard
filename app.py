@@ -58,16 +58,30 @@ def ensure_pdf_font() -> str:
         return PDF_FONT_NAME
     if PDF_FONT_NAME != "Helvetica":
         return PDF_FONT_NAME
+
     regular_candidates = [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+        "/usr/local/share/fonts/DejaVuSans.ttf",
+        str(Path.home() / ".fonts" / "DejaVuSans.ttf"),
     ]
     bold_candidates = [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
         "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/local/share/fonts/DejaVuSans-Bold.ttf",
+        str(Path.home() / ".fonts" / "DejaVuSans-Bold.ttf"),
     ]
-    regular = next((c for c in regular_candidates if Path(c).exists()), None)
-    bold = next((c for c in bold_candidates if Path(c).exists()), None)
+
+    try:
+        if MATPLOTLIB_AVAILABLE:
+            from matplotlib import font_manager
+            regular_candidates.insert(0, font_manager.findfont("DejaVu Sans", fallback_to_default=True))
+            bold_candidates.insert(0, font_manager.findfont(font_manager.FontProperties(family="DejaVu Sans", weight="bold"), fallback_to_default=True))
+    except Exception:
+        pass
+
+    regular = next((c for c in regular_candidates if c and Path(c).exists()), None)
+    bold = next((c for c in bold_candidates if c and Path(c).exists()), None)
     try:
         if regular:
             pdfmetrics.registerFont(TTFont("DejaVuSans", regular))
@@ -78,7 +92,8 @@ def ensure_pdf_font() -> str:
         elif regular:
             PDF_FONT_BOLD_NAME = PDF_FONT_NAME
     except Exception:
-        pass
+        PDF_FONT_NAME = "Helvetica"
+        PDF_FONT_BOLD_NAME = "Helvetica-Bold"
     return PDF_FONT_NAME
 
 
@@ -1956,6 +1971,182 @@ def _pdf_draw_card(c, x, y_top, w, h, title, body_lines, fill="#FFFFFF"):
             break
 
 
+def _pdf_draw_radar_chart(c, dims, x, y_bottom, w, h):
+    labels = list(dims.keys())
+    if not labels:
+        return False
+    cx = x + w * 0.46
+    cy = y_bottom + h * 0.50
+    radius = min(w * 0.30, h * 0.32)
+    rings = 5
+    c.setStrokeColor(colors.HexColor("#D8C7EB"))
+    c.setLineWidth(0.8)
+    for ring in range(1, rings + 1):
+        pts = []
+        r = radius * ring / rings
+        for i in range(len(labels)):
+            ang = math.pi / 2 - (2 * math.pi * i / len(labels))
+            pts.append((cx + r * math.cos(ang), cy + r * math.sin(ang)))
+        for i in range(len(pts)):
+            x1, y1 = pts[i]
+            x2, y2 = pts[(i + 1) % len(pts)]
+            c.line(x1, y1, x2, y2)
+    c.setStrokeColor(colors.HexColor("#E6DDF2"))
+    for i in range(len(labels)):
+        ang = math.pi / 2 - (2 * math.pi * i / len(labels))
+        x2 = cx + radius * math.cos(ang)
+        y2 = cy + radius * math.sin(ang)
+        c.line(cx, cy, x2, y2)
+        lx = cx + (radius + 22) * math.cos(ang)
+        ly = cy + (radius + 22) * math.sin(ang)
+        c.setFillColor(colors.HexColor("#35254E"))
+        c.setFont(PDF_FONT_NAME, 8.5)
+        c.drawCentredString(lx, ly, labels[i])
+    for value in [2, 4, 6, 8, 10]:
+        ry = cy + radius * value / 10
+        c.setFont(PDF_FONT_NAME, 7.5)
+        c.setFillColor(colors.HexColor("#7E6A98"))
+        c.drawString(cx + 4, ry - 2, str(value))
+
+    def poly_points(key):
+        pts = []
+        for i, label in enumerate(labels):
+            val = max(0, min(10, float(dims[label].get(key, 0))))
+            ang = math.pi / 2 - (2 * math.pi * i / len(labels))
+            r = radius * val / 10
+            pts.append((cx + r * math.cos(ang), cy + r * math.sin(ang)))
+        return pts
+
+    def draw_poly(pts, stroke_hex, fill_hex):
+        p = c.beginPath()
+        p.moveTo(*pts[0])
+        for px, py in pts[1:]:
+            p.lineTo(px, py)
+        p.close()
+        c.setStrokeColor(colors.HexColor(stroke_hex))
+        c.setFillColor(colors.HexColor(fill_hex))
+        c.drawPath(p, stroke=1, fill=1)
+
+    draw_poly(poly_points("ELL"), "#9D8ABA", "#E6DDF2")
+    c.setFillAlpha(0.55)
+    draw_poly(poly_points("KTE"), "#5B2C83", "#D6C3EA")
+    c.setFillAlpha(1)
+
+    # legend
+    lx = x + w - 112
+    ly = y_bottom + h - 28
+    c.setFillColor(colors.HexColor("#5B2C83"))
+    c.circle(lx, ly, 4, stroke=0, fill=1)
+    c.setFillColor(colors.HexColor("#35254E"))
+    c.setFont(PDF_FONT_NAME, 9)
+    c.drawString(lx + 10, ly - 3, "KTE")
+    c.setFillColor(colors.HexColor("#9D8ABA"))
+    c.circle(lx + 58, ly, 4, stroke=0, fill=1)
+    c.setFillColor(colors.HexColor("#35254E"))
+    c.drawString(lx + 68, ly - 3, "Ellenfél")
+    return True
+
+
+def _pdf_draw_bar_chart(c, dims, x, y_bottom, w, h):
+    labels = list(dims.keys())
+    if not labels:
+        return False
+    left = x + 48
+    right = x + w - 18
+    bottom = y_bottom + 48
+    top = y_bottom + h - 28
+    plot_h = top - bottom
+    plot_w = right - left
+    c.setStrokeColor(colors.HexColor("#D8C7EB"))
+    for tick in [0, 2, 4, 6, 8, 10]:
+        yy = bottom + plot_h * tick / 10
+        c.line(left, yy, right, yy)
+        c.setFillColor(colors.HexColor("#7E6A98"))
+        c.setFont(PDF_FONT_NAME, 7.5)
+        c.drawRightString(left - 6, yy - 2, str(tick))
+    n = len(labels)
+    group_w = plot_w / max(n, 1)
+    bar_w = min(16, group_w * 0.26)
+    for i, label in enumerate(labels):
+        center = left + group_w * (i + 0.5)
+        for offset, key, fill in [(-bar_w/2 - 2, "KTE", "#5B2C83"), (bar_w/2 + 2, "ELL", "#B7A3C9")]:
+            val = max(0, min(10, float(dims[label].get(key, 0))))
+            bh = plot_h * val / 10
+            c.setFillColor(colors.HexColor(fill))
+            c.roundRect(center + offset - bar_w/2, bottom, bar_w, bh, 3, stroke=0, fill=1)
+        c.setFillColor(colors.HexColor("#35254E"))
+        c.setFont(PDF_FONT_NAME, 7.2)
+        c.saveState()
+        c.translate(center, bottom - 8)
+        c.rotate(25)
+        c.drawString(0, 0, label)
+        c.restoreState()
+    return True
+
+
+def _pdf_draw_strategy_map(c, selected_a, selected_b, x, y_bottom, w, h):
+    rows = strategy_scatter_data(selected_a, selected_b)
+    left = x + 56
+    right = x + w - 26
+    bottom = y_bottom + 44
+    top = y_bottom + h - 34
+    c.setStrokeColor(colors.HexColor("#E0D5EF"))
+    for i in range(1, 7):
+        xx = left + (right-left) * (i-1) / 5
+        c.line(xx, bottom, xx, top)
+    for i in range(1, 6):
+        yy = bottom + (top-bottom) * (i-1) / 4
+        c.line(left, yy, right, yy)
+    xlabels = ["Direkt", "D/P", "Vegyes", "Kiegy.", "Kontroll", "Agresszív"]
+    ylabels = ["Mély", "Alacsony-közép", "Közép", "Közép-magas", "Magas"]
+    c.setFont(PDF_FONT_NAME, 7.8)
+    c.setFillColor(colors.HexColor("#35254E"))
+    for i, lab in enumerate(xlabels):
+        xx = left + (right-left) * i / 5
+        c.drawCentredString(xx, bottom - 16, lab)
+    for i, lab in enumerate(ylabels):
+        yy = bottom + (top-bottom) * i / 4
+        c.drawRightString(left - 8, yy - 3, lab)
+    color_map = {"Paletta": "#5B2C83", "Plan A": "#E0A500", "Plan B": "#2AA7A1"}
+    for row in rows:
+        xx = left + (right-left) * (row["x"] - 1) / 5
+        yy = bottom + (top-bottom) * (row["y"] - 1) / 4
+        c.setFillColor(colors.HexColor(color_map.get(row["marker_type"], "#5B2C83")))
+        c.circle(xx, yy, 7 if row["marker_type"] != "Paletta" else 5.5, stroke=0, fill=1)
+        c.setFillColor(colors.white if row["marker_type"] != "Paletta" else colors.HexColor("#F6F1FB"))
+        c.setFont(PDF_FONT_BOLD_NAME if row["marker_type"] != "Paletta" else PDF_FONT_NAME, 6.8)
+        c.drawCentredString(xx, yy - 2.3, row["code"])
+    return True
+
+
+def _pdf_draw_chart_panel(c, kind, png_bytes, x, y_bottom, w, h, dims=None, selected_a=None, selected_b=None):
+    c.setFillColor(colors.white)
+    c.roundRect(x, y_bottom, w, h, 14, stroke=0, fill=1)
+    if png_bytes:
+        try:
+            img = ImageReader(io.BytesIO(png_bytes))
+            iw, ih = img.getSize()
+            scale = min(w / iw, h / ih)
+            dw, dh = iw * scale, ih * scale
+            dx = x + (w - dw) / 2
+            dy = y_bottom + (h - dh) / 2
+            c.drawImage(img, dx, dy, width=dw, height=dh, preserveAspectRatio=True, mask='auto')
+            return
+        except Exception:
+            pass
+    ok = False
+    if kind == "radar":
+        ok = _pdf_draw_radar_chart(c, dims or {}, x, y_bottom, w, h)
+    elif kind == "bar":
+        ok = _pdf_draw_bar_chart(c, dims or {}, x, y_bottom, w, h)
+    elif kind == "strategy":
+        ok = _pdf_draw_strategy_map(c, selected_a, selected_b, x, y_bottom, w, h)
+    if not ok:
+        c.setFillColor(colors.HexColor("#7E6A98"))
+        c.setFont(PDF_FONT_NAME, 11)
+        c.drawCentredString(x + w/2, y_bottom + h/2, "A diagram betöltése nem sikerült.")
+
+
 def _pdf_draw_image_fit(c, png_bytes, x, y_bottom, w, h):
     c.setFillColor(colors.white)
     c.roundRect(x, y_bottom, w, h, 14, stroke=0, fill=1)
@@ -2018,13 +2209,13 @@ def build_pdf_export_bytes(package: Dict[str, object]) -> bytes:
         _pdf_draw_wrapped(c, ds.get("executive_summary", ""), margin + 14, 90, width - 2 * margin - 28, font_size=9.6, color="#4B3A66", leading=12, max_lines=4)
     c.showPage()
 
-    for title, png in [
-        ("7 dimenziós radar", get_radar_png_bytes(p1["dimensions"])),
-        ("Dimenzió-összehasonlítás", get_bar_chart_png_bytes(p1["dimensions"])),
-        ("Stratégiai térkép", get_strategy_map_png_bytes(p1["plan_a"], p1["plan_b"])),
+    for title, kind, png in [
+        ("7 dimenziós radar", "radar", get_radar_png_bytes(p1["dimensions"])),
+        ("Dimenzió-összehasonlítás", "bar", get_bar_chart_png_bytes(p1["dimensions"])),
+        ("Stratégiai térkép", "strategy", get_strategy_map_png_bytes(p1["plan_a"], p1["plan_b"])),
     ]:
         _pdf_draw_page_bg(c, width, height, title)
-        _pdf_draw_image_fit(c, png, 30, 95, width - 60, height - 160)
+        _pdf_draw_chart_panel(c, kind, png, 30, 95, width - 60, height - 160, dims=p1["dimensions"], selected_a=p1["plan_a"], selected_b=p1["plan_b"])
         c.showPage()
 
     _pdf_draw_page_bg(c, width, height, "Matchup-kép és kulcspontok")
