@@ -1499,14 +1499,12 @@ Ez az alkalmazás **adatalapú taktikai döntéselőkészítő**, amely a match 
 
 def get_methodology_summary() -> str:
     return (
-        "Ez a briefing egy adatalapú taktikai döntéselőkészítő rendszerből készül, amely a match Excel, a player Excel és a célzott PDF-scouting inputok alapján épít pontos matchup-profilt. "
+        "Ez a briefing egy adatalapú taktikai döntéselőkészítő rendszerből készül. "
         "A modell 10 tényező mentén hasonlítja össze a két csapatot: letámadás, labdakihozatal, átmenetek, támadó játék, pontrúgások, labdabirtoklás, lövésprofil, build-up sebezhetőség (BUVI), átmeneti fenyegetés (TTS) és press resistance (PRS2). "
         "Ezt a képet 9 alapstratégiára vetítjük: KON kontra mély blokkból, GAT gyors átmenet, BAT középső blokk + átmenet, KIE kiegyensúlyozott, PRS presszing + átmenet, MLT magas letámadás, DOM dominancia, POZ pozíciós támadás és LAB mélyebb labdatartás. "
-        "A Plan A és Plan B ezért nem megérzésből születik, hanem egzakt statisztikai matchup-vizsgálatból, MI-alapú strukturálásból és a saját szakmai modellezésedből. "
-        "Az eredmény egy gyorsan értelmezhető, edzői döntést támogató összkép, nem puszta tipp."
+        "A Plan A és Plan B ezért nem megérzésből születik, hanem statisztikai matchup-vizsgálatból, MI-alapú strukturálásból és szakmai modellezésből. "
+        "Az eredmény egy gyorsan értelmezhető, edzői döntést támogató összkép."
     )
-
-
 
 def _safe_player_name(value) -> str:
     if value is None:
@@ -1582,76 +1580,74 @@ def _edge_rankings(dims: Dict[str, Dict[str, float]]):
 
 def _dim_action_hint(dim: str, positive: bool = True) -> str:
     positive_map = {
-        "Letámadás": "a nyomás időzítése és a labdaszerzés helye adhat edge-et",
-        "Labdakihozatal": "az első két fázis stabilitására lehet építeni",
-        "Átmenetek": "a gyors helyzetváltásokból lehet fölényt kialakítani",
-        "Támadó játék": "a boxba érkezések és kulcspasszok száma lehet döntő",
-        "Pontrúgások": "az állított szituációk külön edge-et adhatnak",
-        "Labdabirtoklás": "a ritmus és a területi kontroll lehet a fő eszköz",
-        "Lövésprofil": "a helyzetminőség és a lövések szelekciója adhat előnyt",
+        "Letámadás": "itt lehet ráerőltetni a saját ritmusunkat a meccsre",
+        "Labdakihozatal": "innen lehet tisztán felhozni a labdát és nyugodtan felépíteni a támadást",
+        "Átmenetek": "labdaszerzés után innen lehet gyorsan veszélyt kialakítani",
+        "Támadó játék": "ebben a fázisban lehet a legtöbb minőségi helyzetet kialakítani",
+        "Pontrúgások": "itt külön pluszt lehet hozzátenni a meccshez",
+        "Labdabirtoklás": "itt lehet kézben tartani a tempót és a területeket",
+        "Lövésprofil": "itt lehet jobb helyzetekig eljutni, nem csak lövésig",
     }
     negative_map = {
-        "Letámadás": "a presszing mögötti tér külön biztosítást kér",
-        "Labdakihozatal": "a build-up első fázisa fokozott nyomás alatt törhet meg",
-        "Átmenetek": "labdavesztés után gyorsabban kell rendeződni",
-        "Támadó játék": "nem elég a volumen, a helyzetminőséget is javítani kell",
-        "Pontrúgások": "az állított szituációkat külön védeni kell",
-        "Labdabirtoklás": "nem érdemes önmagáért kontrollálni a meccset",
-        "Lövésprofil": "a box előtti védekezés kulcskérdés lehet",
+        "Letámadás": "ha nem jó az időzítés, mögénk lehet játszani",
+        "Labdakihozatal": "az első két passz környékén könnyen elakadhatunk",
+        "Átmenetek": "labdavesztés után gyorsabban kell visszarendeződni",
+        "Támadó játék": "önmagában a volumen kevés, jobb helyzeteket kell kialakítani",
+        "Pontrúgások": "az állított szituációkat külön fegyelemmel kell védeni",
+        "Labdabirtoklás": "nem szabad önmagáért birtokolni a labdát",
+        "Lövésprofil": "a box előtti területet szorosabban kell védeni",
     }
-    return (positive_map if positive else negative_map).get(dim, "ez a terület külön figyelmet igényel")
-
+    return (positive_map if positive else negative_map).get(dim, "ez a terület külön figyelmet kér")
 
 def _plan_text_bank(plan_code: str) -> List[str]:
     banks = {
         "PRS": [
-            "A fő terv triggerelt presszingre és gyors átmenetekre épül.",
-            "A cél nem a vak letámadás, hanem az ellenfél első két fázisának ritmustalanítása.",
-            "Labdaszerzés után rövid időablakban kell támadni, mielőtt az ellenfél visszarendeződik.",
+            "A fő terv alapja a trigger-presszing.",
+            "A nyomást nem folyamatosan kell indítani, hanem a kijelölt pillanatokban, hogy kizökkentsük az ellenfél build-upját.",
+            "Labdaszerzés után gyorsan kell támadni, mielőtt az ellenfél visszarendeződik.",
         ],
         "MLT": [
-            "A fő terv agresszív magas letámadást kér.",
-            "A hangsúly az ellenfél build-up közvetlen szétfeszítésén van.",
-            "A magasan szerzett labdákból közvetlenül kapura kell támadni.",
+            "A fő terv magas letámadásra épül.",
+            "Az ellenfél első passzaira kell nyomást tenni, hogy minél több labdát szerezzünk az ő térfelükön.",
+            "A magasan megszerzett labdákból rögtön kapura kell támadni.",
         ],
         "BAT": [
-            "A fő terv középső blokkos szerkezeti kontrollból indul.",
-            "A presszinget csapdákban, nem folyamatosan kell használni.",
-            "Labdaszerzés után gyors, de nem kontrollálatlan átmenet a kívánatos.",
+            "A fő terv középső blokkos szerkezetből indul.",
+            "A presszinget inkább csapdákban kell használni, nem végig teljes pályán.",
+            "Labdaszerzés után gyors, de kontrollált átmenetekre kell törekedni.",
         ],
         "DOM": [
-            "A fő terv dominancia- és területkontroll-alapú.",
-            "A hangsúly a ritmusszabályozáson és a tartós támadóharmadbeli jelenléten van.",
-            "Labdával türelmesebb, pozíciósabb meccskép építhető.",
+            "A fő terv a területi fölényre és a meccs kontrolljára épül.",
+            "A hangsúly a ritmus szabályozásán és a tartós támadóharmadbeli jelenléten van.",
+            "Labdával türelmes, szervezett játékra van szükség.",
         ],
         "POZ": [
             "A fő terv pozíciós támadásokkal bontaná az ellenfelet.",
-            "A szélesség és a félterületi kombinációk előkészítése a kulcs.",
-            "A labdabirtoklás itt eszköz a szerkezetbontásra, nem öncél.",
+            "A szélesség, a half-space jelenlét és a jó ütemű helycserék döntőek lehetnek.",
+            "A labdabirtoklás itt eszköz: az a cél, hogy megbontsuk az ellenfél szerkezetét.",
         ],
         "KIE": [
-            "A fő terv kiegyensúlyozott, több forgatókönyvet nyitva hagy.",
-            "A hangsúly a strukturális stabilitáson és a jó váltási pillanatokon van.",
-            "A meccsterv nem egyetlen extrém döntésre, hanem fokozatos előnyszerzésre épül.",
+            "A fő terv kiegyensúlyozott meccsvezetést ad.",
+            "A stabilitás az első, és onnan lehet rágyorsítani a megfelelő pillanatokban.",
+            "Nem egyetlen extrém döntésre épít, hanem fokozatos előnyszerzésre.",
         ],
         "LAB": [
             "A fő terv mélyebb labdatartásból szabályozná a ritmust.",
-            "A cél az ellenfél türelmének és szerkezeti fegyelmének kikezdése.",
-            "A visszatámadás és a rest defense ezért különösen fontos.",
+            "A cél az, hogy az ellenfelet mozgatni kelljen, és türelmetlenségbe hajtsuk.",
+            "Ehhez stabil rest defense kell, hogy labdavesztés után se nyíljon meg a csapat.",
         ],
         "GAT": [
-            "A fő terv gyors átmenetekből keresné a meccs edge-ét.",
-            "Az első előre játék minősége fontosabb, mint a hosszú előkészítés.",
+            "A fő terv gyors átmenetekből keres előnyt.",
+            "Az első előre játék minősége fontosabb lesz, mint a hosszú előkészítés.",
             "A szélek és a második hullám érkezése külön hangsúlyt kap.",
         ],
         "KON": [
-            "A fő terv reaktívabb, kontrákból építkező mérkőzésterv.",
-            "A blokk stabilitása és a visszazárás minősége megelőzi a támadóvolument.",
+            "A fő terv reaktívabb, kontrákra építő meccset vetít előre.",
+            "A blokk stabilitása és a visszazárás megelőzi a támadóvolument.",
             "A kulcs az első labdaszerzés utáni gyors és tiszta döntés.",
         ],
     }
     return banks.get(plan_code, [label_strategy(plan_code)])
-
 
 def build_runtime_narrative_texts(dims, controls, team_metrics, opp_metrics, team_matches, opp_matches, opp_pdf_insights, opp_players, ds=None) -> Dict[str, str]:
     dims = dims or {}
@@ -1675,79 +1671,107 @@ def build_runtime_narrative_texts(dims, controls, team_metrics, opp_metrics, tea
     }) if opp_players else []
 
     opp_profile_lines = [
-        f"Ellenfél-archetípus: {archetype}.",
-        f"Plan A / Plan B: {label_strategy(plan_a)} / {label_strategy(plan_b)} ({split}/{100-split}).",
+        f"Az ellenfél profilja összességében {archetype} képet mutat.",
+        f"A javasolt fő irány a {label_strategy(plan_a)}, a tartalék váltás pedig a {label_strategy(plan_b)}; a súlyozás most {split}/{100-split}.",
     ]
     if ds.get("opp_pass"):
-        opp_profile_lines.append(f"Passzbiztonsági jel: {round(float(ds['opp_pass']),1)}%, ami a build-up terhelhetőségét erősen befolyásolja.")
+        opp_profile_lines.append(
+            f"Az ellenfél passzbiztonsága {round(float(ds['opp_pass']), 1)}%, ezért a build-up elleni nyomást ehhez kell igazítani."
+        )
     if top_against:
-        opp_profile_lines.append(f"Elsődleges veszélyzóna: {top_against[0][0].lower()}, ahol az ellenfél edge-e a legerősebb.")
+        opp_profile_lines.append(
+            f"A legnagyobb ellenfél-oldali veszély jelenleg a(z) {top_against[0][0].lower()} területén látszik."
+        )
 
     own_state_lines = [
-        f"Ajánlott működési keret: {build_up} labdakihozatal, {block} blokk, {scenario.lower()} meccskép.",
-        f"Presszing fókuszterület: {zone}; pontrúgás-prioritás: {controls.get('set_piece_priority', 'mindkettő')}.",
+        f"Az ajánlott alapkeret: {build_up} labdakihozatal, {block} blokk és {scenario.lower()} meccskezelés.",
+        f"A presszing fő fókusza: {zone}; a pontrúgásoknál a prioritás: {controls.get('set_piece_priority', 'mindkettő')}.",
     ]
     if controls.get("second_ball_focus"):
-        own_state_lines.append("A second ball kontroll külön kiemelést kap a tervben.")
+        own_state_lines.append("A second ball szituációkat külön kezelni kell, főleg a direkt vagy lepattanós fázisokban.")
     if controls.get("halfspace_defense_priority"):
-        own_state_lines.append("A half-space védelme külön finomhangolt részfeladat.")
+        own_state_lines.append("A half-space védelme külön hangsúlyt kapjon, mert innen jöhet az ellenfél legveszélyesebb kapcsolata.")
 
     key_lines = []
     if top_for:
         dim, edge = top_for[0]
-        key_lines.append(f"A meccs fő megtámasztási pontja a(z) {dim.lower()} lehet, mert itt a legnagyobb a pozitív edge ({edge:+.1f}).")
+        key_lines.append(
+            f"Az első támaszpont a(z) {dim.lower()} legyen, mert itt van a legnagyobb saját előny ({edge:+.1f})."
+        )
         key_lines.append(_dim_action_hint(dim, True).capitalize() + ".")
     if top_against:
         dim, edge = top_against[0]
-        key_lines.append(f"Az elsődleges biztosítási feladat a(z) {dim.lower()} kezelése, mert itt az ellenfél fölénye a legerősebb ({edge:+.1f}).")
+        key_lines.append(
+            f"A legfontosabb biztosítási pont a(z) {dim.lower()} kezelése, mert itt az ellenfélnek van fölénye ({edge:+.1f})."
+        )
+
     combo_map = {
-        ("PRS", "MLT"): "A két terv együtt nyomásból építkezik: az A terv triggerelt presszing, a B terv agresszívebb magas nyomás.",
-        ("BAT", "DOM"): "A két terv együtt szerkezeti kontrollt ad: középső blokkos alap, labdával dominancia felé nyitható váltással.",
-        ("KIE", "BAT"): "A két terv együtt fokozatos meccsmenedzsmentet ad: előbb stabilitás, majd célzott gyorsítás.",
-        ("DOM", "POZ"): "A két terv együtt tartós labdás dominanciára épít, eltérő bontási ritmussal.",
+        ("PRS", "MLT"): "A két terv együtt nyomásalapú meccstervet ad: az A terv inkább triggerelt presszing, a B terv agresszívebb magas letámadás.",
+        ("BAT", "DOM"): "A két terv együtt szerkezeti kontrollt ad: alapból középső blokk, de labdával dominánsabb irányba lehet váltani.",
+        ("KIE", "BAT"): "A két terv együtt fokozatos meccsvezetést ad: stabil alap, majd célzott gyorsítás a megfelelő pillanatban.",
+        ("DOM", "POZ"): "A két terv együtt tartós labdás kontrollt ad, eltérő bontási ritmussal és türelemmel.",
+        ("GAT", "KON"): "A két terv együtt gyors átmenetekre épít: egyik irányból támadóbb, a másikból reaktívabb formában.",
     }
-    combo_line = combo_map.get((plan_a, plan_b)) or f"A két terv kombinációja a(z) {label_strategy(plan_a)} és a(z) {label_strategy(plan_b)} váltását készíti elő a meccsállapot függvényében."
+    combo_line = combo_map.get((plan_a, plan_b)) or (
+        f"A két terv lényege, hogy a meccs állapotától függően lehessen váltani a {label_strategy(plan_a)} és a {label_strategy(plan_b)} között."
+    )
     key_lines.append(combo_line)
     if danger:
-        key_lines.append(f"Kulcsjátékos-fókusz: {danger[0]}.")
+        key_lines.append(f"Személyi fókusz: {danger[0]}.")
     key_lines = unique_keep_order(key_lines)[:4]
 
     risk_lines = []
     if top_against:
         for dim, edge in top_against[:2]:
-            risk_lines.append(f"Kockázat: {dim} – {_dim_action_hint(dim, False)}.")
+            risk_lines.append(f"Kockázati pont: {dim} – {_dim_action_hint(dim, False)}.")
     if archetype == "átmenet-orientált":
-        risk_lines.append("Kockázat: az ellenfél kevés passzból is gyorsan támad kapu felé, ezért a rest defense nem lazulhat.")
+        risk_lines.append("Az ellenfél kevés passzból is gyorsan odaérhet a kapunk elé, ezért a rest defense nem lazulhat.")
     elif archetype == "build-up / labdabirtoklás-orientált":
-        risk_lines.append("Kockázat: ha az első presszinghullám átjátszható, az ellenfél ritmust találhat és hosszú labdás szakaszokat építhet.")
+        risk_lines.append("Ha az első presszinghullámot átjátsszák, az ellenfél hosszabb labdás szakaszokat építhet.")
     elif archetype == "presszing-orientált":
-        risk_lines.append("Kockázat: a saját első két fázis túlterhelődik, ha a labdakihozatal döntései nem elég tiszták.")
+        risk_lines.append("A saját build-up könnyen nyomás alá kerülhet, ezért az első két döntésnek tisztának kell lennie.")
+    elif archetype == "reaktív / alacsony blokkos":
+        risk_lines.append("Türelmetlen támadásépítésnél könnyen bele lehet menni az ellenfél kontrás meccsébe.")
     risk_lines = unique_keep_order(risk_lines)[:4]
 
     dyn_lines = []
-    dyn_lines.append(f"A várható meccsdinamika {scenario.lower()} képet vetít előre, de a tényleges ritmust leginkább a(z) {label_strategy(plan_a)} terv aktiválási pontjai határozzák meg.")
+    dyn_lines.append(
+        f"A meccs várható képe alapvetően {scenario.lower()}, de a ritmust leginkább a(z) {label_strategy(plan_a)} terv aktiválási pontjai fogják meghatározni."
+    )
     dyn_lines += _plan_text_bank(plan_a)[:2]
     if archetype == "átmenet-orientált":
-        dyn_lines.append("A meccs nyitottabbá válhat, ha a középső zónában túl sok szabad második labda marad.")
+        dyn_lines.append("Ha a középső zónában sok szabad lepattanó marad, a meccs gyorsan nyitottá válhat.")
     elif archetype == "build-up / labdabirtoklás-orientált":
-        dyn_lines.append("Hosszabb labdás szakaszok várhatók, ezért a türelmes középső blokk és a jó pressing-trigger fontosabb lesz, mint a folyamatos rohanás.")
+        dyn_lines.append("Hosszabb ellenfél-labdabirtoklási szakaszokra is fel kell készülni, ezért a türelmes blokk fontosabb lehet, mint a folyamatos rohanás.")
     elif archetype == "reaktív / alacsony blokkos":
-        dyn_lines.append("Az ellenfél valószínűleg nem fogja végig felvállalni a területet, ezért a meccs ritmusa sokszor a saját döntéseken múlik majd.")
+        dyn_lines.append("Az ellenfél valószínűleg nem fogja végig felvállalni a területet, ezért a meccs ritmusa sokszor rajtunk múlik majd.")
+    elif archetype == "presszing-orientált":
+        dyn_lines.append("Az első félidő kulcsa az lehet, mennyire tudunk kijönni az ellenfél nyomása alól rendezett szerkezettel.")
     if danger:
-        dyn_lines.append(f"A kulcsjátékos-terhelés oldaláról {danger[0].split(' – ')[0]} jelentheti a legfőbb iránytűt a meccsben.")
+        player_name = danger[0].split(" – ")[0]
+        dyn_lines.append(f"A személyi fókusz oldaláról {player_name} mozgása és kapcsolatai külön figyelmet kérnek.")
     dyn_lines = unique_keep_order(dyn_lines)[:5]
 
     conc_lines = []
-    conc_lines.append(f"Javasolt alapmeccsterv: {label_strategy(plan_a)}, tartalék váltással: {label_strategy(plan_b)}.")
+    conc_lines.append(f"Az alapjavaslat a(z) {label_strategy(plan_a)}, szükség esetén a(z) {label_strategy(plan_b)} felé lehet váltani.")
     if top_for:
-        conc_lines.append(f"A tervet érdemes a(z) {top_for[0][0].lower()} fölényre építeni, mert itt a legnagyobb a saját oldali edge.")
+        conc_lines.append(
+            f"A tervet érdemes a(z) {top_for[0][0].lower()} fölényre építeni, mert itt látszik a legnagyobb saját előny."
+        )
     if top_against:
-        conc_lines.append(f"A biztosítás első pontja a(z) {top_against[0][0].lower()} legyen, mert itt a legerősebb az ellenfél oldali fenyegetés.")
+        conc_lines.append(
+            f"A biztosítás első pontja a(z) {top_against[0][0].lower()} legyen, mert itt a legerősebb az ellenfél oldali veszély."
+        )
     conc_lines.append(combo_line)
     if ds.get("matchup_notes"):
         conc_lines.append(ds["matchup_notes"][0])
     if danger:
-        conc_lines.append(f"Személyspecifikus fókusz: {danger[0]}; másodlagos figyelmi pont: {danger[1] if len(danger)>1 else danger[0].split(' – ')[0]}.")
+        primary = danger[0]
+        secondary = danger[1] if len(danger) > 1 else ""
+        if secondary:
+            conc_lines.append(f"Személyspecifikus fókusz: {primary}; másodlagos figyelmi pont: {secondary}.")
+        else:
+            conc_lines.append(f"Személyspecifikus fókusz: {primary}.")
     conc_lines = unique_keep_order(conc_lines)[:6]
 
     return {
@@ -1758,7 +1782,6 @@ def build_runtime_narrative_texts(dims, controls, team_metrics, opp_metrics, tea
         "match_dynamics_text": "\n".join(f"- {x}" for x in dyn_lines),
         "conclusion_text": "\n".join(f"- {x}" for x in conc_lines),
     }
-
 
 def summarize_danger_players(key_player_threats: Dict[str, List[dict]]) -> List[str]:
     priority = ["creators", "progressors", "build_up", "duel_players", "defenders"]
