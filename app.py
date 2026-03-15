@@ -2624,9 +2624,9 @@ def get_radar_svg(dims: Dict[str, Dict[str, float]]) -> str:
     ell_vals = [dims[x]["ELL"] for x in labels]
 
     width = 960
-    height = 760
-    cx, cy = 360, 330
-    max_r = 210
+    height = 540
+    cx, cy = 330, 245
+    max_r = 155
     n = len(labels)
 
     def wrap_label(text: str, width_chars: int = 14) -> List[str]:
@@ -2704,12 +2704,12 @@ def get_radar_svg(dims: Dict[str, Dict[str, float]]) -> str:
       {ell_circles}
       {kte_circles}
       {''.join(label_svg)}
-      <rect x="690" y="70" width="200" height="74" rx="12" fill="#F8F5FC" stroke="#E1D8EE"/>
-      <circle cx="715" cy="97" r="7" fill="#5B2C83" />
-      <text x="732" y="102" font-size="15" fill="#2F1D4A" font-weight="600">KTE</text>
-      <circle cx="715" cy="122" r="7" fill="#B7A3C9" stroke="#5B2C83" stroke-width="1" />
-      <text x="732" y="127" font-size="15" fill="#2F1D4A" font-weight="600">ELL</text>
-      <text x="715" y="148" font-size="11" fill="#6D5B88">Skála: 1-10</text>
+      <rect x="650" y="58" width="220" height="74" rx="12" fill="#F8F5FC" stroke="#E1D8EE"/>
+      <circle cx="675" cy="85" r="7" fill="#5B2C83" />
+      <text x="692" y="90" font-size="15" fill="#2F1D4A" font-weight="600">KTE</text>
+      <circle cx="675" cy="110" r="7" fill="#B7A3C9" stroke="#5B2C83" stroke-width="1" />
+      <text x="692" y="115" font-size="15" fill="#2F1D4A" font-weight="600">ELL</text>
+      <text x="675" y="136" font-size="11" fill="#6D5B88">Skála: 1-10</text>
     </svg>
     """
 
@@ -2803,11 +2803,16 @@ h1,h2,h3,h4,p,li,span,label,div { color:#18212F; }
 .summary-page-break { break-before: page; page-break-before: always; margin-top: 0; }
 .summary-avoid-break, .summary-block, .summary-chartbox, .summary-viz-page { break-inside: avoid; page-break-inside: avoid; }
 .summary-viz-page { margin-top:0; padding-top:0; }
-.summary-chartbox { margin-top:0 !important; margin-bottom:8px !important; }
-.summary-chartbox iframe { margin-top:-58px !important; margin-bottom:-78px !important; }
+.summary-chartbox { margin-top:0 !important; margin-bottom:6px !important; }
+.summary-chartbox iframe { margin-top:-18px !important; margin-bottom:-26px !important; }
+.summary-chartbox.radar-box iframe { margin-top:-6px !important; margin-bottom:-70px !important; }
+.summary-chartbox.bar-box iframe { margin-top:-8px !important; margin-bottom:-16px !important; }
+.summary-chartbox.map-box iframe { margin-top:-22px !important; margin-bottom:-44px !important; }
 .summary-compact-list { margin:0; padding-left:1rem; }
 .summary-compact-list li { margin:0 0 .18rem 0; line-height:1.22; }
 .summary-method { font-size:.92rem; line-height:1.35; color:#273142; margin-top:4px; }
+.summary-method.compact { font-size:.88rem; line-height:1.28; margin-top:2px; }
+.summary-method-title { font-size:1.05rem; font-weight:700; color:#241D33; margin:2px 0 4px 0; }
 .summary-section-tight h3, .summary-section-tight h4, .summary-section-tight p { margin-bottom: .2rem !important; margin-top: .2rem !important; }
 .summary-footer-note { margin-top: 6px; font-size:.84rem; color:#5B6474; text-align:right; }
 @media (max-width: 980px) {
@@ -3410,23 +3415,23 @@ def render_summary_page(package: Dict[str, object]):
 
     st.markdown("<div class='summary-page-break summary-viz-page summary-section-tight'>", unsafe_allow_html=True)
     st.markdown("#### 📊 Vizualizációk")
-    c1, c2 = st.columns([0.93, 1.07])
+    c1, c2 = st.columns([0.92, 1.08])
     with c1:
         st.markdown("##### 7 dimenziós profil")
-        st.markdown("<div class='summary-chartbox'>", unsafe_allow_html=True)
-        render_radar_svg(dims, height=255)
+        st.markdown("<div class='summary-chartbox radar-box'>", unsafe_allow_html=True)
+        render_radar_svg(dims, height=300)
         st.markdown("</div>", unsafe_allow_html=True)
     with c2:
         st.markdown("##### Dimenziók összehasonlítása")
-        st.markdown("<div class='summary-chartbox'>", unsafe_allow_html=True)
-        render_bar_chart(dims, height=205)
+        st.markdown("<div class='summary-chartbox bar-box'>", unsafe_allow_html=True)
+        render_bar_chart(dims, height=255)
         st.markdown("</div>", unsafe_allow_html=True)
     st.markdown("##### 9 stratégia térképe")
-    st.markdown("<div class='summary-chartbox'>", unsafe_allow_html=True)
-    render_strategy_map(p1.get("plan_a"), p1.get("plan_b"), height=145)
+    st.markdown("<div class='summary-chartbox map-box'>", unsafe_allow_html=True)
+    render_strategy_map(p1.get("plan_a"), p1.get("plan_b"), height=170)
     st.markdown("</div>", unsafe_allow_html=True)
-    st.subheader("🧠 Módszertan röviden")
-    st.markdown(f"<div class='summary-method'>{pdf_safe_text(get_methodology_summary())}</div>", unsafe_allow_html=True)
+    st.markdown("<div class='summary-method-title'>🧠 Módszertan röviden</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='summary-method compact'>{pdf_safe_text(get_methodology_summary())}</div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("</div>", unsafe_allow_html=True)
