@@ -268,6 +268,15 @@ def df_to_records(df: Optional[pd.DataFrame]) -> List[dict]:
     return df.to_dict(orient="records")
 
 
+def extract_team_name_from_filename(filename: str) -> str:
+    s = Path(str(filename)).stem
+    s = re.sub(r"^\s*\d{1,2}[._-]\d{1,2}[._-]\d{2,4}\s*[-_]?\s*", "", s)
+    s = re.sub(r"\b(match statistics|player statistics|statistics|match report|report)\b", "", s, flags=re.I)
+    s = s.replace("_", " ")
+    s = re.sub(r"\s+", " ", s).strip(" -_")
+    return s or "Ellenfél"
+
+
 # =========================================================
 # STRATEGY PALETTE
 # =========================================================
@@ -1473,6 +1482,7 @@ def get_methodology_summary() -> str:
         "A modell 7 dimenzióban hasonlítja össze a két csapatot: letámadás, labdakihozatal, átmenetek, támadó játék, pontrúgások, labdabirtoklás és lövésprofil. "
         "Ezt a képet 9 alapstratégiára vetítjük: KON kontra mély blokkból, GAT gyors átmenet, BAT középső blokk + átmenet, KIE kiegyensúlyozott, PRS presszing + átmenet, MLT magas letámadás, DOM dominancia, POZ pozíciós támadás és LAB mélyebb labdatartás. "
         "A Plan A és Plan B tehát egy egzakt statisztikai matchup-vizsgálatból és MI-alapú strukturálásból születik. "
+        "A blokkmagasság tengely azt mutatja, hogy a terv mélyebb, közepes vagy magasabb védelmi pozícióból akar-e működni; a játékstílus tengely pedig a direkt megoldásoktól a kontrollált, hosszabb labdás építkezésig helyezi el a stratégiát. "
         "Az eredmény egy gyorsan értelmezhető, edzői döntést támogató összkép."
     )
 
@@ -1883,7 +1893,7 @@ def build_html_export(package: Dict[str, object]) -> str:
     .small {{ color:#6C5A88; font-size:12px; }}
     </style></head><body>
     <div class='page'>
-      <div class='brand'><div style='display:flex;align-items:center;gap:14px;'><div class='badge'>KTE</div><div><h1>Taktikai döntéselőkészítő ⚽</h1><div class='small'>Adatalapú briefing • 7 dimenzió • 9 stratégia</div></div></div><div style='font-size:24px;font-weight:700;color:#2F2B53;'>Készítette: Sziegl Gábor</div></div>
+      <div class='brand'><div style='display:flex;align-items:center;gap:14px;'><div class='badge'>KTE</div><div><h1>Taktikai döntéselőkészítő ⚽</h1><div class='small'>Adatalapú briefing • 7 dimenzió • 9 stratégia</div></div></div><div style='font-size:22px;font-weight:700;color:#2F2B53;text-align:right;'><div style='font-size:24px;font-weight:800;color:#221B44;'>Ellenfél: {pdf_safe_text(p1.get('opponent_display_name', '-'))}</div><div>Készítette: Sziegl Gábor</div></div></div>
       <div class='hero'>
         <div>
           <div style='margin-bottom:10px'><span class='pill'>7 dimenzió</span><span class='pill'>9 stratégia</span><span class='pill'>MI + szakmai modell</span></div>
@@ -2335,6 +2345,7 @@ def build_export_package(
             "three_keys": parse_bullet_text(three_keys_text),
             "risks": parse_bullet_text(risks_text),
             "conclusion": conclusion_text,
+            "opponent_display_name": st.session_state.get("opponent_display_name", "-"),
         },
         "page_3_tactical_overview": {
             "opponent_dna": opponent_dna_text,
@@ -2804,7 +2815,9 @@ st.markdown("""
 .stApp { background: linear-gradient(180deg, #F6F1FF 0%, #F9F7FD 52%, #FFFFFF 100%); color:#121826; }
 .kte-hero { display:flex; align-items:center; justify-content:space-between; gap:14px; background:rgba(255,255,255,.92); color:#18212F; padding:16px 18px; border-radius:20px; margin-bottom:16px; border:1px solid #E7DEF8; box-shadow:0 10px 28px rgba(76,46,131,.08); }
 .kte-hero-left { display:flex; align-items:center; gap:14px; }
-.kte-author { font-size:1.15rem; font-weight:700; color:#2F2B53; white-space:nowrap; margin-left:18px; }
+.kte-author { font-size:1.22rem; font-weight:700; color:#2F2B53; white-space:nowrap; margin-left:18px; text-align:right; }
+.kte-author .opp { display:block; font-size:1.18rem; font-weight:800; color:#221B44; }
+.kte-author .by { display:block; font-size:1.08rem; font-weight:700; color:#4B3D73; }
 .kte-badge { width:52px; height:52px; border-radius:50%; background:linear-gradient(135deg,#F3EFFF,#E7DEFF); color:#5A38A6; border:1px solid #D7C7FB; display:flex; align-items:center; justify-content:center; font-weight:800; }
 .block-container { padding-top: 1.25rem; }
 [data-testid="stSidebar"] { background:#FFFFFF; border-right:1px solid #E6EAF2; }
@@ -2814,7 +2827,7 @@ h1,h2,h3,h4,p,li,span,label,div { color:#18212F; }
 .summary-kpi { display:grid; grid-template-columns:1fr 1fr .88fr; gap:10px; background:transparent; border:none; padding:0; margin-bottom:10px; }
 .summary-kpi .k { background:rgba(255,255,255,.98); border:1px solid #E7DEF8; border-radius:18px; padding:12px 14px; box-shadow:0 10px 24px rgba(76,46,131,.06); min-height:94px; }
 .summary-kpi .n { font-size:1.42rem; font-weight:800; color:#4B2E83; line-height:1.02; margin:2px 0 4px 0; }
-.summary-note { color:#5B6474; font-size:.9rem; line-height:1.25; }
+.summary-note { color:#5B6474; font-size:1rem; line-height:1.32; text-align:justify; }
 .summary-grid-tight { display:grid; grid-template-columns:1.2fr .85fr; gap:10px; }
 .summary-micro { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
 .summary-pill { background:#F2ECFF; color:#4B2E83; border:1px solid #DED1FF; padding:4px 9px; border-radius:999px; font-size:.79rem; font-weight:600; }
@@ -2828,9 +2841,9 @@ h1,h2,h3,h4,p,li,span,label,div { color:#18212F; }
 .summary-chartbox.bar-box iframe { margin-top:-4px !important; margin-bottom:-6px !important; }
 .summary-chartbox.map-box iframe { margin-top:-8px !important; margin-bottom:-2px !important; }
 .summary-compact-list { margin:0; padding-left:1rem; }
-.summary-compact-list li { margin:0 0 .18rem 0; line-height:1.22; }
-.summary-method { font-size:.92rem; line-height:1.35; color:#273142; margin-top:4px; }
-.summary-method.compact { font-size:.88rem; line-height:1.28; margin-top:2px; }
+.summary-compact-list li { margin:0 0 .22rem 0; line-height:1.34; text-align:justify; font-size:1.02rem; }
+.summary-method { font-size:1rem; line-height:1.4; color:#273142; margin-top:4px; text-align:justify; }
+.summary-method.compact { font-size:.96rem; line-height:1.36; margin-top:2px; text-align:justify; }
 .summary-method-title { font-size:1.05rem; font-weight:700; color:#241D33; margin:2px 0 4px 0; }
 .summary-section-tight h3, .summary-section-tight h4, .summary-section-tight p { margin-bottom: .2rem !important; margin-top: .2rem !important; }
 .summary-footer-note { margin-top: 6px; font-size:.84rem; color:#5B6474; text-align:right; }
@@ -2848,7 +2861,8 @@ h1,h2,h3,h4,p,li,span,label,div { color:#18212F; }
 }
 </style>
 """, unsafe_allow_html=True)
-st.markdown("""<div class='kte-hero'><div class='kte-hero-left'><div class='kte-badge'>KTE</div><div><div style='font-size:1.55rem;font-weight:800;color:#18212F;'>Taktikai döntéselőkészítő ⚽</div><div style='opacity:.9;color:#475467;'>Adatalapú briefing • 7 dimenzió • 9 stratégia</div></div></div><div class='kte-author'>Készítette: Sziegl Gábor</div></div>""", unsafe_allow_html=True)
+opponent_display_name = st.session_state.get('opponent_display_name', '-')
+st.markdown(f"""<div class='kte-hero'><div class='kte-hero-left'><div class='kte-badge'>KTE</div><div><div style='font-size:1.55rem;font-weight:800;color:#18212F;'>Taktikai döntéselőkészítő ⚽</div><div style='opacity:.9;color:#475467;'>Adatalapú briefing • 7 dimenzió • 9 stratégia</div></div></div><div class='kte-author'><span class='opp'>Ellenfél: {pdf_safe_text(opponent_display_name)}</span><span class='by'>Készítette: Sziegl Gábor</span></div></div>""", unsafe_allow_html=True)
 st.sidebar.caption("A rövidítések a stratégiai paletta elemeit jelölik")
 
 step = st.sidebar.radio(
@@ -2942,6 +2956,7 @@ if step == "1. Input":
         st.session_state["team_pdf_pages"] = team_pdf_pages
         st.session_state["opp_pdf_pages"] = opp_pdf_pages
         st.session_state["opponent_dna_text"] = opponent_dna_text
+        st.session_state["opponent_display_name"] = extract_team_name_from_filename(getattr(opp_match, "name", "Ellenfél"))
 
         # export-ready structured defaults
         possession_opp = (opp_metrics.get("possession_pct", 0) * 100) if opp_metrics.get("possession_pct", 0) <= 1 else opp_metrics.get("possession_pct", 0)
@@ -3464,6 +3479,7 @@ def render_summary_page(package: Dict[str, object]):
     st.markdown("<div class='summary-shell'>", unsafe_allow_html=True)
     st.markdown("<div style='height:0.8rem;'></div>", unsafe_allow_html=True)
     st.markdown("### Vezetői összegző")
+    st.caption(f"Ellenfél: {p1.get('opponent_display_name', '-')}")
 
     st.markdown(f"""
     <div class='summary-kpi'>
@@ -3528,9 +3544,6 @@ def render_summary_page(package: Dict[str, object]):
     st.markdown(html_bullets(dyn, limit=6, empty_text="Nincs külön meccsdinamika-megjegyzés."), unsafe_allow_html=True)
     st.subheader("Negyedórás várható lefolyás")
     st.markdown(html_bullets(quarter_flow, empty_text="Nincs becsült negyedórás meccslefolyás."), unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown("<div class='summary-page-break summary-section-tight'>", unsafe_allow_html=True)
     st.markdown("<div class='summary-method-title'>🧠 Módszertan röviden</div>", unsafe_allow_html=True)
     st.markdown(f"<div class='summary-method compact'>{pdf_safe_text(localize_summary_text(get_methodology_summary()))}</div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
