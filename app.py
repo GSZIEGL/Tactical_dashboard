@@ -1514,34 +1514,39 @@ def build_full_conclusion(package: Dict[str, object]) -> List[str]:
         key=lambda x: abs(float(x[1])),
         reverse=True,
     )
-    top_edges = sorted_dims[:2]
-    edge_texts = []
+    top_edges = sorted_dims[:3]
+
+    edge_lines = []
     for dim, edge in top_edges:
         if edge > 0:
-            edge_texts.append(f"KTE-előny a(z) {dim.lower()} dimenzióban")
+            edge_lines.append(f"A KTE ebben a matchupban előnyt mutat a(z) {dim.lower()} dimenzióban")
         elif edge < 0:
-            edge_texts.append(f"ellenfél-előny a(z) {dim.lower()} dimenzióban")
+            edge_lines.append(f"Az ellenfél ebben a matchupban erősebb a(z) {dim.lower()} dimenzióban")
 
     bullets = []
     bullets.append(
-        f"A matchup alapján a fő terv: {p1.get('plan_a', 'n.a.')} ({p1.get('plan_split', 'n.a.')}) , kiegészítő opció: {p1.get('plan_b', 'n.a.')}."
+        f"Alapjavaslat: a mérkőzés fő terve a(z) {label_strategy(p1.get('plan_a', 'KIE'))}, kiegészítő váltási opcióként a(z) {label_strategy(p1.get('plan_b', 'BAT'))} maradjon készenlétben."
     )
-    if edge_texts:
-        bullets.append("A 7 dimenziós profil legfontosabb olvasata: " + "; ".join(edge_texts) + ".")
-    if coach.get("build_up_solution") or coach.get("defensive_block"):
+    if coach.get("build_up_solution") or coach.get("defensive_block") or coach.get("match_scenario"):
         bullets.append(
-            f"Ajánlott játékkeret: {coach.get('build_up_solution', 'n.a.')} labdakihozatal, {coach.get('defensive_block', 'n.a.')} blokk, {label_scenario(coach.get('match_scenario', 'n.a.'))} meccsdinamika."
+            f"Működési keret: {localize_summary_text(str(coach.get('build_up_solution') or 'vegyes'))} labdakihozatal, {localize_summary_text(str(coach.get('defensive_block') or 'közepes'))} blokk és {localize_summary_text(label_scenario(coach.get('match_scenario') or 'balanced')).lower()} meccsforgatókönyv."
         )
+    if edge_lines:
+        bullets.append("Fő matchup-olvasat: " + "; ".join(edge_lines[:2]) + ".")
+    three_keys = [localize_summary_text(x) for x in p1.get("three_keys", [])[:2]]
+    if three_keys:
+        bullets.append("Edzői fókusz: " + "; ".join(three_keys) + ".")
+    risks = [localize_summary_text(x) for x in p1.get("risks", [])[:2]]
+    if risks:
+        bullets.append("Legfontosabb kockázat: " + "; ".join(risks) + ".")
     danger = summarize_danger_players(p3.get("key_player_threats", {}))
     if danger:
-        bullets.append("Legveszélyesebb ellenfél-faktorok: " + "; ".join([x.split(' – ')[0] for x in danger[:3]]) + ".")
-    if ds.get("has_manual_intervention") and ds.get("executive_summary"):
-        bullets.append(str(ds.get("executive_summary")))
-    recs = ds.get("recommendation", [])
-    if ds.get("has_manual_intervention") and recs:
-        bullets.append("Vezetői döntési fókusz: " + "; ".join(recs[:2]) + ".")
-    if p1.get("conclusion"):
-        bullets.append(str(p1["conclusion"]))
+        bullets.append("Kiemelt ellenfél-veszélyek: " + "; ".join([x.split(' – ')[0] for x in danger[:3]]) + ".")
+    recs = [localize_summary_text(x) for x in ds.get("recommendation", [])]
+    if recs:
+        bullets.append("Vezetői döntési javaslat: " + "; ".join(recs[:2]) + ".")
+    elif p1.get("conclusion"):
+        bullets.append(localize_summary_text(str(p1["conclusion"])))
 
     clean = []
     seen = set()
@@ -3376,8 +3381,8 @@ def localize_summary_text(text: str) -> str:
         ("second ball", "második labda"),
         ("half-space", "félterület"),
         ("build-up", "labdakihozatal"),
-        ("trigger", "indítási trigger"),
-        ("rest defense", "visszarendeződés"),
+        ("trigger", "váltási jel"),
+        ("rest defense", "maradék védekezés"),
         ("boxelőtti", "tizenhatos előtti"),
         ("Plan A", "A terv"),
         ("Plan B", "B terv"),
@@ -3413,6 +3418,27 @@ def build_quarter_flow(package: Dict[str, object]) -> List[str]:
         f"76–90 perc: {third_dyn}",
     ]
 
+
+
+def build_detailed_match_dynamics(package: Dict[str, object]) -> List[str]:
+    p3 = package.get("page_3_tactical_overview", {})
+    controls = package.get("coach_controls", {}) or {}
+    scenario = localize_summary_text(label_scenario(controls.get("match_scenario") or "balanced")).lower()
+    zone = localize_summary_text(str(controls.get("pressing_zone") or "közép")).lower()
+    buildup = localize_summary_text(str(controls.get("build_up_solution") or "vegyes")).lower()
+    block = localize_summary_text(str(controls.get("defensive_block") or "közepes")).lower()
+    dyn = [localize_summary_text(x) for x in p3.get("match_dynamics", [])]
+
+    bullets = [
+        f"Alapforgatókönyv: {scenario} meccskép várható, vagyis nem folyamatos rohanásra, hanem kontrollált ritmusváltásokra kell készülni.",
+        f"Presszingben a {zone} zóna legyen az elsődleges indítási pont; a cél nem a folyamatos kinyílás, hanem a labdakihozatal ritmusának megtörése.",
+        f"Saját labdával a {buildup} labdakihozatal az ajánlott alap, védekezésben pedig a {block} blokk adja a stabil kiinduló szerkezetet.",
+        "Ha az ellenfél félterületben túl sok érintéssel jut előre, célzott belső zárással és gyors oldalváltási reakcióval kell fékezni a terhelést.",
+    ]
+    for x in dyn[:2]:
+        if x not in bullets:
+            bullets.append(x)
+    return bullets[:5]
 
 
 
@@ -3475,47 +3501,44 @@ def render_summary_page(package: Dict[str, object]):
 
     st.markdown("<div class='summary-page-break summary-viz-page summary-section-tight'>", unsafe_allow_html=True)
     st.markdown("#### 📊 Vizualizációk")
-    c1, c2 = st.columns([0.48, 0.52], gap="medium")
-    with c1:
-        st.markdown("##### 7 dimenziós profil")
-        st.markdown("<div class='summary-chartbox radar-box'>", unsafe_allow_html=True)
-        render_radar_svg(dims, height=370, compact=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-    with c2:
-        st.markdown("##### Dimenziók összehasonlítása")
-        st.markdown("<div class='summary-chartbox bar-box'>", unsafe_allow_html=True)
-        render_bar_chart(dims, height=420)
-        st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown("##### 7 dimenziós profil")
+    st.markdown("<div class='summary-chartbox radar-box'>", unsafe_allow_html=True)
+    render_radar_svg(dims, height=520, compact=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown("##### Dimenziók összehasonlítása")
+    st.markdown("<div class='summary-chartbox bar-box'>", unsafe_allow_html=True)
+    render_bar_chart(dims, height=500)
+    st.markdown("</div>", unsafe_allow_html=True)
     st.markdown("##### 9 stratégia térképe")
     st.markdown("<div class='summary-chartbox map-box'>", unsafe_allow_html=True)
-    render_strategy_map(p1.get("plan_a"), p1.get("plan_b"), height=305)
+    render_strategy_map(p1.get("plan_a"), p1.get("plan_b"), height=430)
     st.markdown("</div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("<div class='summary-page-break summary-section-tight'>", unsafe_allow_html=True)
-    info_left, info_right = st.columns([1.15, 0.85], gap="medium")
+    info_left, info_right = st.columns([1.02, 0.98], gap="medium")
     with info_left:
         st.subheader("Matchup-olvasat")
-        st.markdown(html_bullets([localize_summary_text(x) for x in ds.get("matchup_notes", [])], limit=3, empty_text="Nincs külön matchup-olvasat."), unsafe_allow_html=True)
+        st.markdown(html_bullets([localize_summary_text(x) for x in ds.get("matchup_notes", [])], limit=4, empty_text="Nincs külön matchup-olvasat."), unsafe_allow_html=True)
         st.subheader("Várható meccsdinamika")
-        dyn = [localize_summary_text(x) for x in p3.get("match_dynamics", [])]
-        if not dyn:
-            controls = package.get("coach_controls", {}) or {}
-            dyn = [
-                f"Forgatókönyv: {localize_summary_text(str(controls.get('match_scenario') or 'kiegyensúlyozott'))}.",
-                f"Presszing fókuszterület: {localize_summary_text(str(controls.get('pressing_zone') or 'közép'))}.",
-                f"Labdakihozatal: {localize_summary_text(str(controls.get('build_up_solution') or 'vegyes'))}, védelmi blokk: {localize_summary_text(str(controls.get('defensive_block') or 'közepes'))}.",
-            ]
-        st.markdown(html_bullets(dyn, limit=4, empty_text="Nincs külön meccsdinamika-megjegyzés."), unsafe_allow_html=True)
+        dyn = build_detailed_match_dynamics(package)
+        st.markdown(html_bullets(dyn, limit=5, empty_text="Nincs külön meccsdinamika-megjegyzés."), unsafe_allow_html=True)
     with info_right:
         st.subheader("Vezetői javaslatok")
         rec = [localize_summary_text(x) for x in ds.get("recommendation", [])]
         if not rec:
-            rec = ["A jelenlegi matchup-kép alapján a fő döntési pont továbbra is a blokkmagasság és a labdakihozatal váltási triggerje."]
+            rec = [
+                f"A fő terv maradjon a(z) {localize_summary_text(label_strategy(p1.get('plan_a', 'KIE')).lower())}, és csak akkor válts a(z) {localize_summary_text(label_strategy(p1.get('plan_b', 'BAT')).lower())} felé, ha az ellenfél nyomás nélkül tud kijönni.",
+                "A blokk tartsa a középső szerkezetet, és a presszing indítása legyen triggerhez kötött, ne folyamatos.",
+                "Saját labdával a belső progresszió és a második labdák kontrollja legyen az elsődleges edzői hangsúly.",
+            ]
         st.markdown(html_bullets(rec, limit=4), unsafe_allow_html=True)
 
     st.subheader("Negyedórás várható lefolyás")
     st.markdown(html_bullets(quarter_flow, empty_text="Nincs becsült negyedórás meccslefolyás."), unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("<div class='summary-page-break summary-section-tight'>", unsafe_allow_html=True)
     st.markdown("<div class='summary-method-title'>🧠 Módszertan röviden</div>", unsafe_allow_html=True)
     st.markdown(f"<div class='summary-method compact'>{pdf_safe_text(localize_summary_text(get_methodology_summary()))}</div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
