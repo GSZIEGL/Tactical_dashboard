@@ -2625,14 +2625,14 @@ def get_radar_svg(dims: Dict[str, Dict[str, float]], compact: bool = False) -> s
 
     if compact:
         width = 860
-        height = 360
-        cx, cy = 290, 182
-        max_r = 118
-        legend_x, legend_y, legend_w, legend_h = 560, 44, 190, 64
-        label_offset = 56
-        label_font = 14
+        height = 320
+        cx, cy = 292, 154
+        max_r = 106
+        legend_x, legend_y, legend_w, legend_h = 570, 34, 178, 58
+        label_offset = 44
+        label_font = 13
         level_font = 10
-        circle_r = 4.0
+        circle_r = 3.8
     else:
         width = 960
         height = 540
@@ -2820,10 +2820,10 @@ h1,h2,h3,h4,p,li,span,label,div { color:#18212F; }
 .summary-viz-page { margin-top:0; padding-top:0; }
 .summary-chartbox { margin-top:0 !important; margin-bottom:4px !important; }
 .summary-chartbox h4, .summary-chartbox h5 { margin-bottom:0 !important; }
-.summary-chartbox iframe { margin-top:-10px !important; margin-bottom:-12px !important; }
-.summary-chartbox.radar-box iframe { margin-top:-2px !important; margin-bottom:-18px !important; }
-.summary-chartbox.bar-box iframe { margin-top:-6px !important; margin-bottom:-8px !important; }
-.summary-chartbox.map-box iframe { margin-top:-8px !important; margin-bottom:-10px !important; }
+.summary-chartbox iframe { margin-top:-6px !important; margin-bottom:-8px !important; }
+.summary-chartbox.radar-box iframe { margin-top:-22px !important; margin-bottom:-10px !important; }
+.summary-chartbox.bar-box iframe { margin-top:-4px !important; margin-bottom:-6px !important; }
+.summary-chartbox.map-box iframe { margin-top:-8px !important; margin-bottom:-2px !important; }
 .summary-compact-list { margin:0; padding-left:1rem; }
 .summary-compact-list li { margin:0 0 .18rem 0; line-height:1.22; }
 .summary-method { font-size:.92rem; line-height:1.35; color:#273142; margin-top:4px; }
@@ -3435,16 +3435,17 @@ def render_summary_page(package: Dict[str, object]):
     with c1:
         st.markdown("##### 7 dimenziós profil")
         st.markdown("<div class='summary-chartbox radar-box'>", unsafe_allow_html=True)
-        render_radar_svg(dims, height=238, compact=True)
+        render_radar_svg(dims, height=252, compact=True)
         st.markdown("</div>", unsafe_allow_html=True)
     with c2:
         st.markdown("##### Dimenziók összehasonlítása")
         st.markdown("<div class='summary-chartbox bar-box'>", unsafe_allow_html=True)
-        render_bar_chart(dims, height=320)
+        render_bar_chart(dims, height=360)
         st.markdown("</div>", unsafe_allow_html=True)
     st.markdown("##### 9 stratégia térképe")
+    st.markdown("<div style='margin-top:-8px'></div>", unsafe_allow_html=True)
     st.markdown("<div class='summary-chartbox map-box'>", unsafe_allow_html=True)
-    render_strategy_map(p1.get("plan_a"), p1.get("plan_b"), height=205)
+    render_strategy_map(p1.get("plan_a"), p1.get("plan_b"), height=248)
     st.markdown("</div>", unsafe_allow_html=True)
     st.markdown("<div class='summary-method-title'>🧠 Módszertan röviden</div>", unsafe_allow_html=True)
     st.markdown(f"<div class='summary-method compact'>{pdf_safe_text(get_methodology_summary())}</div>", unsafe_allow_html=True)
