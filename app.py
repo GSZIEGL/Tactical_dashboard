@@ -590,11 +590,21 @@ def parse_excel_metrics_with_debug(file_bytes: bytes) -> Tuple[Dict[str, float],
     sheet_debug: List[dict] = []
     match_count = 0
 
-    xls = pd.ExcelFile(file_bytes)
+    try:
+        xls = pd.ExcelFile(io.BytesIO(file_bytes))
+    except ImportError:
+        st.session_state["excel_import_error"] = (
+            "Az Excel-fájlok feldolgozásához hiányzik az openpyxl csomag. "
+            "Tedd be a requirements.txt fájlba: openpyxl"
+        )
+        return metrics, all_debug_rows, sheet_debug, match_count
+    except Exception as e:
+        st.session_state["excel_import_error"] = f"Az Excel-fájl nem olvasható: {e}"
+        return metrics, all_debug_rows, sheet_debug, match_count
 
     for sheet in xls.sheet_names:
         try:
-            df = pd.read_excel(file_bytes, sheet_name=sheet, header=None)
+            df = pd.read_excel(io.BytesIO(file_bytes), sheet_name=sheet, header=None)
         except Exception:
             continue
 
@@ -644,7 +654,28 @@ def rename_player_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 @st.cache_data(show_spinner=False)
 def parse_player_excel(file_bytes: bytes) -> Dict[str, pd.DataFrame]:
-    df = pd.read_excel(file_bytes)
+    try:
+        df = pd.read_excel(io.BytesIO(file_bytes))
+    except ImportError:
+        st.session_state["excel_import_error"] = (
+            "Az Excel-fájlok feldolgozásához hiányzik az openpyxl csomag. "
+            "Tedd be a requirements.txt fájlba: openpyxl"
+        )
+        return {
+            "creators": pd.DataFrame(),
+            "progressors": pd.DataFrame(),
+            "build_up": pd.DataFrame(),
+            "defenders": pd.DataFrame(),
+            "duel_players": pd.DataFrame(),
+        }
+    except Exception:
+        return {
+            "creators": pd.DataFrame(),
+            "progressors": pd.DataFrame(),
+            "build_up": pd.DataFrame(),
+            "defenders": pd.DataFrame(),
+            "duel_players": pd.DataFrame(),
+        }
     df = rename_player_columns(df)
 
     required = ["player", "minutes_played"]
@@ -2398,6 +2429,7 @@ def build_export_package(
         "page_1_onepager": {
             "plan_a": selected_plan_a,
             "plan_b": selected_plan_b,
+            "opponent_name": st.session_state.get("opponent_name", "").strip(),
             "plan_split": f"{selected_split}/{100 - selected_split}",
             "dimensions": dims,
             "dimension_mode": "adjusted" if st.session_state.get("use_adjusted_dims", True) else "base",
@@ -2934,6 +2966,13 @@ step = st.sidebar.radio(
 
 if step == "1. Input":
     st.header("Inputok feltöltése")
+    opponent_name = st.text_input(
+        "Ellenfél neve",
+        value=st.session_state.get("opponent_name", ""),
+        key="opponent_name_input",
+        placeholder="pl. Aqvital FC Csákvár",
+    )
+    st.session_state["opponent_name"] = opponent_name.strip()
 
     c1, c2 = st.columns(2)
 
@@ -2943,6 +2982,7 @@ if step == "1. Input":
         kte_player = st.file_uploader("KTE Player Excel", type=["xlsx"], key="kte_player")
         kte_pdf_1 = st.file_uploader("KTE PDF 1", type=["pdf"], key="kte_pdf_1")
         kte_pdf_2 = st.file_uploader("KTE PDF 2", type=["pdf"], key="kte_pdf_2")
+        kte_pdf_3 = st.file_uploader("KTE PDF 3", type=["pdf"], key="kte_pdf_3")
 
     with c2:
         st.subheader("Opponent")
@@ -2952,7 +2992,11 @@ if step == "1. Input":
         opp_pdf_2 = st.file_uploader("Opponent PDF 2", type=["pdf"], key="opp_pdf_2")
         opp_pdf_3 = st.file_uploader("Opponent PDF 3", type=["pdf"], key="opp_pdf_3")
 
+    if st.session_state.get("excel_import_error"):
+        st.error(st.session_state.get("excel_import_error"))
+
     if kte_match and opp_match:
+        st.session_state["excel_import_error"] = ""
         (
             dims,
             team_metrics,
@@ -2983,10 +3027,15 @@ if step == "1. Input":
             opp_match,
             kte_player,
             opp_player,
-            [kte_pdf_1, kte_pdf_2],
+            [kte_pdf_1, kte_pdf_2, kte_pdf_3],
             [opp_pdf_1, opp_pdf_2, opp_pdf_3],
         )
 
+        if st.session_state.get("excel_import_error"):
+            st.error(st.session_state.get("excel_import_error"))
+        elif not team_metrics or not opp_metrics:
+            st.error("Az Excel-feldolgozás nem sikerült. Ellenőrizd, hogy az openpyxl telepítve van-e a futtatási környezetben.")
+        st.session_state["opponent_name"] = st.session_state.get("opponent_name", "").strip()
         st.session_state["dims"] = dims
         st.session_state["team_metrics"] = team_metrics
         st.session_state["opp_metrics"] = opp_metrics
@@ -3534,7 +3583,9 @@ def render_summary_page(package: Dict[str, object]):
     st.markdown("<div class='summary-shell'>", unsafe_allow_html=True)
     st.markdown("<div style='height:0.8rem;'></div>", unsafe_allow_html=True)
     st.markdown("### Vezetői összegző")
-    st.markdown("<div class='summary-footer-note'>Készítette: Sziegl Gábor</div>", unsafe_allow_html=True)
+    opponent_name = pdf_safe_text(p1.get("opponent_name", "") or st.session_state.get("opponent_name", ""))
+    header_meta = f"Ellenfél: {opponent_name} • Készítette: Sziegl Gábor" if opponent_name else "Készítette: Sziegl Gábor"
+    st.markdown(f"<div class='summary-footer-note'>{header_meta}</div>", unsafe_allow_html=True)
 
     st.markdown(f"""
     <div class='summary-kpi'>
