@@ -2618,15 +2618,31 @@ def render_bar_chart(dims: Dict[str, Dict[str, float]], height: int = 360):
 
 
 
-def get_radar_svg(dims: Dict[str, Dict[str, float]]) -> str:
+def get_radar_svg(dims: Dict[str, Dict[str, float]], compact: bool = False) -> str:
     labels = list(dims.keys())
     kte_vals = [dims[x]["KTE"] for x in labels]
     ell_vals = [dims[x]["ELL"] for x in labels]
 
-    width = 960
-    height = 540
-    cx, cy = 330, 245
-    max_r = 155
+    if compact:
+        width = 860
+        height = 360
+        cx, cy = 290, 182
+        max_r = 118
+        legend_x, legend_y, legend_w, legend_h = 560, 44, 190, 64
+        label_offset = 56
+        label_font = 14
+        level_font = 10
+        circle_r = 4.0
+    else:
+        width = 960
+        height = 540
+        cx, cy = 330, 245
+        max_r = 155
+        legend_x, legend_y, legend_w, legend_h = 650, 58, 220, 74
+        label_offset = 85
+        label_font = 16
+        level_font = 11
+        circle_r = 4.8
     n = len(labels)
 
     def wrap_label(text: str, width_chars: int = 14) -> List[str]:
@@ -2667,31 +2683,31 @@ def get_radar_svg(dims: Dict[str, Dict[str, float]]) -> str:
             pts.append((x, y))
         pts_str = " ".join(f"{x:.1f},{y:.1f}" for x, y in pts)
         grid_polys.append(f'<polygon points="{pts_str}" fill="none" stroke="#D8D2E3" stroke-width="1" />')
-        level_labels.append(f'<text x="{cx + 8}" y="{cy - (lvl / 10.0) * max_r + 4:.1f}" font-size="11" fill="#8B7CA3">{lvl}</text>')
+        level_labels.append(f'<text x="{cx + 8}" y="{cy - (lvl / 10.0) * max_r + 4:.1f}" font-size="{level_font}" fill="#8B7CA3">{lvl}</text>')
 
     for i, label in enumerate(labels):
         ang = -math.pi / 2 + (2 * math.pi * i / n)
         x2 = cx + math.cos(ang) * max_r
         y2 = cy + math.sin(ang) * max_r
         axes.append(f'<line x1="{cx}" y1="{cy}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="#D8D2E3" stroke-width="1" />')
-        lx = cx + math.cos(ang) * (max_r + 85)
-        ly = cy + math.sin(ang) * (max_r + 85)
+        lx = cx + math.cos(ang) * (max_r + label_offset)
+        ly = cy + math.sin(ang) * (max_r + label_offset)
         anchor = "middle"
         if lx < cx - 40:
             anchor = "end"
         elif lx > cx + 40:
             anchor = "start"
-        wrapped = wrap_label(label)
+        wrapped = wrap_label(label, 12 if compact else 14)
         tspans = []
         for j, part in enumerate(wrapped):
-            dy = 0 if j == 0 else 18
+            dy = 0 if j == 0 else (15 if compact else 18)
             tspans.append(f'<tspan x="{lx:.1f}" dy="{dy}">{part}</tspan>')
-        label_svg.append(f'<text x="{lx:.1f}" y="{ly:.1f}" font-size="16" text-anchor="{anchor}" fill="#2F1D4A" font-weight="600">{"".join(tspans)}</text>')
+        label_svg.append(f'<text x="{lx:.1f}" y="{ly:.1f}" font-size="{label_font}" text-anchor="{anchor}" fill="#2F1D4A" font-weight="600">{"".join(tspans)}</text>')
 
     kte_poly, kte_pts = polygon_points(kte_vals)
     ell_poly, ell_pts = polygon_points(ell_vals)
-    kte_circles = "".join(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4.8" fill="#5B2C83" stroke="white" stroke-width="1.2" />' for x, y in kte_pts)
-    ell_circles = "".join(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4.8" fill="#B7A3C9" stroke="#5B2C83" stroke-width="1.0" />' for x, y in ell_pts)
+    kte_circles = "".join(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{circle_r}" fill="#5B2C83" stroke="white" stroke-width="1.2" />' for x, y in kte_pts)
+    ell_circles = "".join(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{circle_r}" fill="#B7A3C9" stroke="#5B2C83" stroke-width="1.0" />' for x, y in ell_pts)
 
     return f"""
     <svg width="100%" height="{height}" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg">
@@ -2699,23 +2715,22 @@ def get_radar_svg(dims: Dict[str, Dict[str, float]]) -> str:
       {''.join(grid_polys)}
       {''.join(level_labels)}
       {''.join(axes)}
-      <polygon points="{ell_poly}" fill="rgba(183,163,201,0.24)" stroke="#9D8ABA" stroke-width="2.6" stroke-dasharray="6 4" />
-      <polygon points="{kte_poly}" fill="rgba(91,44,131,0.16)" stroke="#5B2C83" stroke-width="3" />
+      <polygon points="{ell_poly}" fill="rgba(183,163,201,0.24)" stroke="#9D8ABA" stroke-width="2.4" stroke-dasharray="6 4" />
+      <polygon points="{kte_poly}" fill="rgba(91,44,131,0.16)" stroke="#5B2C83" stroke-width="2.8" />
       {ell_circles}
       {kte_circles}
       {''.join(label_svg)}
-      <rect x="650" y="58" width="220" height="74" rx="12" fill="#F8F5FC" stroke="#E1D8EE"/>
-      <circle cx="675" cy="85" r="7" fill="#5B2C83" />
-      <text x="692" y="90" font-size="15" fill="#2F1D4A" font-weight="600">KTE</text>
-      <circle cx="675" cy="110" r="7" fill="#B7A3C9" stroke="#5B2C83" stroke-width="1" />
-      <text x="692" y="115" font-size="15" fill="#2F1D4A" font-weight="600">ELL</text>
-      <text x="675" y="136" font-size="11" fill="#6D5B88">Skála: 1-10</text>
+      <rect x="{legend_x}" y="{legend_y}" width="{legend_w}" height="{legend_h}" rx="12" fill="#F8F5FC" stroke="#E1D8EE"/>
+      <circle cx="{legend_x+18}" cy="{legend_y+20}" r="6" fill="#5B2C83" />
+      <text x="{legend_x+34}" y="{legend_y+25}" font-size="14" fill="#2F1D4A" font-weight="600">KTE</text>
+      <circle cx="{legend_x+18}" cy="{legend_y+42}" r="6" fill="#B7A3C9" stroke="#5B2C83" stroke-width="1" />
+      <text x="{legend_x+34}" y="{legend_y+47}" font-size="14" fill="#2F1D4A" font-weight="600">ELL</text>
+      <text x="{legend_x+18}" y="{legend_y+62}" font-size="10" fill="#6D5B88">Skála: 1-10</text>
     </svg>
     """
 
-
-def render_radar_svg(dims: Dict[str, Dict[str, float]], height: int = 770):
-    components.html(get_radar_svg(dims), height=height)
+def render_radar_svg(dims: Dict[str, Dict[str, float]], height: int = 770, compact: bool = False):
+    components.html(get_radar_svg(dims, compact=compact), height=height)
 
 
 # =========================================================
@@ -2803,11 +2818,12 @@ h1,h2,h3,h4,p,li,span,label,div { color:#18212F; }
 .summary-page-break { break-before: page; page-break-before: always; margin-top: 0; }
 .summary-avoid-break, .summary-block, .summary-chartbox, .summary-viz-page { break-inside: avoid; page-break-inside: avoid; }
 .summary-viz-page { margin-top:0; padding-top:0; }
-.summary-chartbox { margin-top:0 !important; margin-bottom:6px !important; }
-.summary-chartbox iframe { margin-top:-18px !important; margin-bottom:-26px !important; }
-.summary-chartbox.radar-box iframe { margin-top:-6px !important; margin-bottom:-70px !important; }
-.summary-chartbox.bar-box iframe { margin-top:-8px !important; margin-bottom:-16px !important; }
-.summary-chartbox.map-box iframe { margin-top:-22px !important; margin-bottom:-44px !important; }
+.summary-chartbox { margin-top:0 !important; margin-bottom:4px !important; }
+.summary-chartbox h4, .summary-chartbox h5 { margin-bottom:0 !important; }
+.summary-chartbox iframe { margin-top:-10px !important; margin-bottom:-12px !important; }
+.summary-chartbox.radar-box iframe { margin-top:-2px !important; margin-bottom:-18px !important; }
+.summary-chartbox.bar-box iframe { margin-top:-6px !important; margin-bottom:-8px !important; }
+.summary-chartbox.map-box iframe { margin-top:-8px !important; margin-bottom:-10px !important; }
 .summary-compact-list { margin:0; padding-left:1rem; }
 .summary-compact-list li { margin:0 0 .18rem 0; line-height:1.22; }
 .summary-method { font-size:.92rem; line-height:1.35; color:#273142; margin-top:4px; }
@@ -2824,7 +2840,7 @@ h1,h2,h3,h4,p,li,span,label,div { color:#18212F; }
   .kte-hero, .summary-kpi .k { background:#FFFFFF !important; box-shadow:none !important; }
   .summary-page-break { break-before: page; page-break-before: always; }
   .summary-avoid-break, .summary-block, .summary-chartbox, .summary-viz-page { break-inside: avoid; page-break-inside: avoid; }
-  .summary-chartbox iframe { margin-top:-58px !important; margin-bottom:-78px !important; }
+  .summary-chartbox iframe { margin-top:-12px !important; margin-bottom:-16px !important; }
   h1, h2, h3, h4, h5 { break-after: avoid; page-break-after: avoid; }
 }
 </style>
@@ -3415,20 +3431,20 @@ def render_summary_page(package: Dict[str, object]):
 
     st.markdown("<div class='summary-page-break summary-viz-page summary-section-tight'>", unsafe_allow_html=True)
     st.markdown("#### 📊 Vizualizációk")
-    c1, c2 = st.columns([0.92, 1.08])
+    c1, c2 = st.columns([0.47, 0.53], gap="medium")
     with c1:
         st.markdown("##### 7 dimenziós profil")
         st.markdown("<div class='summary-chartbox radar-box'>", unsafe_allow_html=True)
-        render_radar_svg(dims, height=300)
+        render_radar_svg(dims, height=238, compact=True)
         st.markdown("</div>", unsafe_allow_html=True)
     with c2:
         st.markdown("##### Dimenziók összehasonlítása")
         st.markdown("<div class='summary-chartbox bar-box'>", unsafe_allow_html=True)
-        render_bar_chart(dims, height=255)
+        render_bar_chart(dims, height=320)
         st.markdown("</div>", unsafe_allow_html=True)
     st.markdown("##### 9 stratégia térképe")
     st.markdown("<div class='summary-chartbox map-box'>", unsafe_allow_html=True)
-    render_strategy_map(p1.get("plan_a"), p1.get("plan_b"), height=170)
+    render_strategy_map(p1.get("plan_a"), p1.get("plan_b"), height=205)
     st.markdown("</div>", unsafe_allow_html=True)
     st.markdown("<div class='summary-method-title'>🧠 Módszertan röviden</div>", unsafe_allow_html=True)
     st.markdown(f"<div class='summary-method compact'>{pdf_safe_text(get_methodology_summary())}</div>", unsafe_allow_html=True)
