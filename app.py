@@ -2624,12 +2624,12 @@ def get_radar_svg(dims: Dict[str, Dict[str, float]], compact: bool = False) -> s
     ell_vals = [dims[x]["ELL"] for x in labels]
 
     if compact:
-        width = 860
-        height = 320
-        cx, cy = 292, 154
-        max_r = 106
-        legend_x, legend_y, legend_w, legend_h = 570, 34, 178, 58
-        label_offset = 44
+        width = 880
+        height = 360
+        cx, cy = 300, 188
+        max_r = 126
+        legend_x, legend_y, legend_w, legend_h = 600, 30, 178, 58
+        label_offset = 40
         label_font = 13
         level_font = 10
         circle_r = 3.8
@@ -3367,6 +3367,55 @@ if step == "3. Debug":
         st.write(build_pdf_insights(text))
 
 
+def localize_summary_text(text: str) -> str:
+    s = str(text or "")
+    replacements = [
+        ("balanced", "kiegyensúlyozott"),
+        ("aggressive", "agresszív"),
+        ("conservative", "konzervatív"),
+        ("second ball", "második labda"),
+        ("half-space", "félterület"),
+        ("build-up", "labdakihozatal"),
+        ("trigger", "indítási trigger"),
+        ("rest defense", "visszarendeződés"),
+        ("boxelőtti", "tizenhatos előtti"),
+        ("Plan A", "A terv"),
+        ("Plan B", "B terv"),
+    ]
+    for a, b in replacements:
+        s = s.replace(a, b).replace(a.title(), b[:1].upper() + b[1:])
+    return s
+
+
+def build_quarter_flow(package: Dict[str, object]) -> List[str]:
+    p1 = package.get("page_1_onepager", {})
+    p3 = package.get("page_3_tactical_overview", {})
+    controls = package.get("coach_controls", {})
+    plan_a = p1.get("plan_a", "KIE")
+    plan_b = p1.get("plan_b", "BAT")
+    split = p1.get("plan_split", "60/40")
+    scenario = localize_summary_text(str(controls.get("match_scenario") or "kiegyensúlyozott")).lower()
+    pressing_zone = localize_summary_text(str(controls.get("pressing_zone") or "közép")).lower()
+    buildup = localize_summary_text(str(controls.get("build_up_solution") or "vegyes")).lower()
+    block = localize_summary_text(str(controls.get("defensive_block") or "közepes")).lower()
+    dynamics = [localize_summary_text(x) for x in p3.get("match_dynamics", [])]
+
+    first_dyn = dynamics[0] if dynamics else "Az első szakaszban a szerkezeti stabilitás legyen az elsődleges, kinyílás nélkül."
+    second_dyn = dynamics[1] if len(dynamics) > 1 else f"A középső szakaszban a(z) {label_strategy(plan_a)} terv súlypontja domináljon, főleg {pressing_zone} oldali indításokkal."
+    third_dyn = dynamics[2] if len(dynamics) > 2 else f"Labdakihozatalban a(z) {buildup} megoldás és a(z) {block} blokk közti váltás legyen az alap reakció."
+
+    return [
+        f"0–15 perc: {first_dyn}",
+        f"16–30 perc: A meccsterv fő iránya a(z) {label_strategy(plan_a)}; a nyomást érdemes {pressing_zone} zónához kötni.",
+        f"31–45 perc: A félidő végére fontos a pontrúgások és a tizenhatos előtti kontroll megtartása.",
+        f"46–60 perc: Újraindítás után a(z) {buildup} labdakihozatali terv és a(z) {block} blokk legyen a stabil alap.",
+        f"61–75 perc: A tervsúly továbbra is {split} arányban az A terv felé húz; itt már a váltási trigger dönti el, mikor kell a(z) {label_strategy(plan_b)} elemeket aktiválni.",
+        f"76–90 perc: {third_dyn}",
+    ]
+
+
+
+
 # =========================================================
 # EXPORT PREP
 # =========================================================
@@ -3375,33 +3424,35 @@ if step == "3. Debug":
 def render_summary_page(package: Dict[str, object]):
     p1 = package["page_1_onepager"]
     p3 = package["page_3_tactical_overview"]
+    ds = package.get("decision_support", {}) or {}
     dims = p1.get("dimensions", {})
     danger = summarize_danger_players(p3.get("key_player_threats", {}))
-    conclusion_lines = build_full_conclusion(package)
+    conclusion_lines = [localize_summary_text(x) for x in build_full_conclusion(package)]
     mode_label = "korrigált döntési profil" if p1.get("dimension_mode") == "adjusted" else "alap matchup-profil"
+    quarter_flow = build_quarter_flow(package)
 
     def html_bullets(items, limit=None, empty_text="-"):
         rows = items[:limit] if limit else items
         if not rows:
-            return f"<div class='summary-note'>{pdf_safe_text(empty_text)}</div>"
-        return "<ul class='summary-compact-list'>" + "".join(f"<li>{pdf_safe_text(str(x))}</li>" for x in rows) + "</ul>"
+            return f"<div class='summary-note'>{pdf_safe_text(localize_summary_text(empty_text))}</div>"
+        return "<ul class='summary-compact-list'>" + "".join(f"<li>{pdf_safe_text(localize_summary_text(str(x)))}</li>" for x in rows) + "</ul>"
 
     st.markdown("<div class='summary-shell'>", unsafe_allow_html=True)
-    st.markdown("<div style='height:1.15rem;'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:0.8rem;'></div>", unsafe_allow_html=True)
     st.markdown("### Vezetői összegző")
     st.markdown("<div class='summary-footer-note'>Készítette: Sziegl Gábor</div>", unsafe_allow_html=True)
 
     st.markdown(f"""
     <div class='summary-kpi'>
         <div class='k'>
-            <div class='summary-note'>⚔️ Plan A</div>
+            <div class='summary-note'>⚔️ A terv</div>
             <div class='n'>{pdf_safe_text(p1.get('plan_a','-'))}</div>
-            <div class='summary-note'>{label_strategy(p1.get('plan_a',''))}</div>
+            <div class='summary-note'>{pdf_safe_text(localize_summary_text(label_strategy(p1.get('plan_a',''))))}</div>
         </div>
         <div class='k'>
-            <div class='summary-note'>🛡️ Plan B</div>
+            <div class='summary-note'>🛡️ B terv</div>
             <div class='n'>{pdf_safe_text(p1.get('plan_b','-'))}</div>
-            <div class='summary-note'>{label_strategy(p1.get('plan_b',''))}</div>
+            <div class='summary-note'>{pdf_safe_text(localize_summary_text(label_strategy(p1.get('plan_b',''))))}</div>
         </div>
         <div class='k'>
             <div class='summary-note'>⚖️ Arány</div>
@@ -3411,44 +3462,62 @@ def render_summary_page(package: Dict[str, object]):
     </div>
     """, unsafe_allow_html=True)
 
-    top_left, top_right = st.columns([1.06, 0.94])
+    top_left, top_right = st.columns([1.0, 1.0], gap="medium")
     with top_left:
         st.subheader("🎯 Teljes konklúzió")
         st.markdown(html_bullets(conclusion_lines, limit=4), unsafe_allow_html=True)
-        st.markdown(
-            f"<div class='summary-micro'><span class='summary-pill'>Plan A: {pdf_safe_text(p1.get('plan_a','-'))}</span>"
-            f"<span class='summary-pill'>Plan B: {pdf_safe_text(p1.get('plan_b','-'))}</span>"
-            f"<span class='summary-pill'>Arány: {pdf_safe_text(p1.get('plan_split','-'))}</span></div>",
-            unsafe_allow_html=True,
-        )
-
     with top_right:
-        st.subheader("⚠️ 3 kulcs • kockázatok • ellenfélveszély")
+        st.subheader("⚠️ 3 kulcs • kockázatok • legveszélyesebb ellenfél-játékosok")
         merged = [f"Kulcs: {item}" for item in p1.get('three_keys', [])[:3]]
-        merged += [f"Kockázat: {item}" for item in p1.get('risks', [])[:1]]
+        merged += [f"Kockázat: {item}" for item in p1.get('risks', [])[:2]]
         merged += [f"Ellenfél: {item}" for item in danger[:2]]
         st.markdown(html_bullets(merged, empty_text="Nincs elérhető gyors összegző lista."), unsafe_allow_html=True)
 
     st.markdown("<div class='summary-page-break summary-viz-page summary-section-tight'>", unsafe_allow_html=True)
     st.markdown("#### 📊 Vizualizációk")
-    c1, c2 = st.columns([0.47, 0.53], gap="medium")
+    c1, c2 = st.columns([0.48, 0.52], gap="medium")
     with c1:
         st.markdown("##### 7 dimenziós profil")
         st.markdown("<div class='summary-chartbox radar-box'>", unsafe_allow_html=True)
-        render_radar_svg(dims, height=252, compact=True)
+        render_radar_svg(dims, height=370, compact=True)
         st.markdown("</div>", unsafe_allow_html=True)
     with c2:
         st.markdown("##### Dimenziók összehasonlítása")
         st.markdown("<div class='summary-chartbox bar-box'>", unsafe_allow_html=True)
-        render_bar_chart(dims, height=360)
+        render_bar_chart(dims, height=420)
         st.markdown("</div>", unsafe_allow_html=True)
     st.markdown("##### 9 stratégia térképe")
-    st.markdown("<div style='margin-top:-8px'></div>", unsafe_allow_html=True)
     st.markdown("<div class='summary-chartbox map-box'>", unsafe_allow_html=True)
-    render_strategy_map(p1.get("plan_a"), p1.get("plan_b"), height=248)
+    render_strategy_map(p1.get("plan_a"), p1.get("plan_b"), height=305)
     st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("<div class='summary-page-break summary-section-tight'>", unsafe_allow_html=True)
+    info_left, info_right = st.columns([1.15, 0.85], gap="medium")
+    with info_left:
+        st.subheader("Matchup-olvasat")
+        st.markdown(html_bullets([localize_summary_text(x) for x in ds.get("matchup_notes", [])], limit=3, empty_text="Nincs külön matchup-olvasat."), unsafe_allow_html=True)
+        st.subheader("Várható meccsdinamika")
+        dyn = [localize_summary_text(x) for x in p3.get("match_dynamics", [])]
+        if not dyn:
+            controls = package.get("coach_controls", {}) or {}
+            dyn = [
+                f"Forgatókönyv: {localize_summary_text(str(controls.get('match_scenario') or 'kiegyensúlyozott'))}.",
+                f"Presszing fókuszterület: {localize_summary_text(str(controls.get('pressing_zone') or 'közép'))}.",
+                f"Labdakihozatal: {localize_summary_text(str(controls.get('build_up_solution') or 'vegyes'))}, védelmi blokk: {localize_summary_text(str(controls.get('defensive_block') or 'közepes'))}.",
+            ]
+        st.markdown(html_bullets(dyn, limit=4, empty_text="Nincs külön meccsdinamika-megjegyzés."), unsafe_allow_html=True)
+    with info_right:
+        st.subheader("Vezetői javaslatok")
+        rec = [localize_summary_text(x) for x in ds.get("recommendation", [])]
+        if not rec:
+            rec = ["A jelenlegi matchup-kép alapján a fő döntési pont továbbra is a blokkmagasság és a labdakihozatal váltási triggerje."]
+        st.markdown(html_bullets(rec, limit=4), unsafe_allow_html=True)
+
+    st.subheader("Negyedórás várható lefolyás")
+    st.markdown(html_bullets(quarter_flow, empty_text="Nincs becsült negyedórás meccslefolyás."), unsafe_allow_html=True)
     st.markdown("<div class='summary-method-title'>🧠 Módszertan röviden</div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='summary-method compact'>{pdf_safe_text(get_methodology_summary())}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='summary-method compact'>{pdf_safe_text(localize_summary_text(get_methodology_summary()))}</div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("</div>", unsafe_allow_html=True)
