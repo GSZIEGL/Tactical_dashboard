@@ -1492,7 +1492,7 @@ def render_methodology_block():
     with st.expander("Metodika / hogyan dolgozik az app", expanded=False):
         st.markdown(
             """
-Ez az alkalmazás **adatalapú taktikai döntéselőkészítő**, amely a match Excel, player Excel és célzott PDF-scouting inputokból épít egységes **matchup-profilt**. A modell a két csapatot **7 taktikai dimenzióban** méri: **letámadás** (labdaszerzés magassága és nyomás), **labdakihozatal** (első két fázis stabilitása), **átmenetek** (gyors helyzetváltás), **támadó játék** (helyzetkialakítás és boxelérés), **pontrúgások**, **labdabirtoklás** és **lövésprofil**. Ezt a képet illeszti rá a **9 alapstratégiára**: **KON** kontra mély blokkból, **GAT** gyors átmenet, **BAT** középső blokk + átmenet, **KIE** kiegyensúlyozott játék, **PRS** presszing + átmenet, **MLT** magas letámadás, **DOM** dominancia, **POZ** pozíciós támadás, **LAB** mélyebb labdatartás. A javaslat tehát nem tipp, hanem több adatforrásból épített matchup-vizsgálat, amelyben **MI-alapú strukturálás** és a saját szakmai finomhangolásod egyszerre jelenik meg. Az edzői beavatkozás után a rendszer végig következetesen újrasúlyozza a képet, így az export már a módosított döntési logikát mutatja.
+Ez az alkalmazás **adatalapú taktikai döntéselőkészítő**, amely a match Excel, player Excel és célzott PDF-scouting inputokból épít egységes **matchup-profilt**. A modell a két csapatot **10 tényező mentén** hasonlítja össze: a 7 alapdimenzió mellett külön kezeli a **build-up sebezhetőséget (BUVI)**, az **átmeneti fenyegetést (TTS)** és a **press resistance-et (PRS2)**. Ezt a képet illeszti rá a **9 alapstratégiára**: **KON** kontra mély blokkból, **GAT** gyors átmenet, **BAT** középső blokk + átmenet, **KIE** kiegyensúlyozott játék, **PRS** presszing + átmenet, **MLT** magas letámadás, **DOM** dominancia, **POZ** pozíciós támadás, **LAB** mélyebb labdatartás. A javaslat tehát nem tipp, hanem több adatforrásból épített matchup-vizsgálat, amelyben **MI-alapú strukturálás** és a saját szakmai finomhangolásod egyszerre jelenik meg. A narratíva sem fix sablon: a rendszer több száz, gyakorlatban ezer feletti szövegkombinációból állít össze ellenfélspecifikus briefinget. Az edzői beavatkozás után a rendszer végig következetesen újrasúlyozza a képet, így az export már a módosított döntési logikát mutatja.
             """
         )
 
@@ -1503,6 +1503,7 @@ def get_methodology_summary() -> str:
         "A modell 10 tényező mentén hasonlítja össze a két csapatot: letámadás, labdakihozatal, átmenetek, támadó játék, pontrúgások, labdabirtoklás, lövésprofil, build-up sebezhetőség (BUVI), átmeneti fenyegetés (TTS) és press resistance (PRS2). "
         "Ezt a képet 9 alapstratégiára vetítjük: KON kontra mély blokkból, GAT gyors átmenet, BAT középső blokk + átmenet, KIE kiegyensúlyozott, PRS presszing + átmenet, MLT magas letámadás, DOM dominancia, POZ pozíciós támadás és LAB mélyebb labdatartás. "
         "A Plan A és Plan B ezért nem megérzésből születik, hanem statisztikai matchup-vizsgálatból, MI-alapú strukturálásból és szakmai modellezésből. "
+        "A narratíva sem fix sablon: a rendszer több száz, gyakorlatban ezer feletti szövegkombinációból rak össze ellenfélspecifikus briefinget. "
         "Az eredmény egy gyorsan értelmezhető, edzői döntést támogató összkép."
     )
 
@@ -3088,7 +3089,9 @@ for k, v in defaults.items():
 st.markdown("""
 <style>
 .stApp { background: linear-gradient(180deg, #F6F1FF 0%, #F9F7FD 52%, #FFFFFF 100%); color:#121826; }
-.kte-hero { display:flex; align-items:center; gap:14px; background:rgba(255,255,255,.92); color:#18212F; padding:16px 18px; border-radius:20px; margin-bottom:16px; border:1px solid #E7DEF8; box-shadow:0 10px 28px rgba(76,46,131,.08); }
+.kte-hero { display:flex; align-items:center; justify-content:space-between; gap:14px; background:rgba(255,255,255,.92); color:#18212F; padding:16px 18px; border-radius:20px; margin-bottom:16px; border:1px solid #E7DEF8; box-shadow:0 10px 28px rgba(76,46,131,.08); }
+.kte-hero-left { display:flex; align-items:center; gap:14px; min-width:0; }
+.kte-hero-meta { text-align:right; color:#344054; font-weight:700; line-height:1.32; font-size:1rem; white-space:pre-line; }
 .kte-badge { width:52px; height:52px; border-radius:50%; background:linear-gradient(135deg,#F3EFFF,#E7DEFF); color:#5A38A6; border:1px solid #D7C7FB; display:flex; align-items:center; justify-content:center; font-weight:800; }
 .block-container { padding-top: 1.25rem; }
 [data-testid="stSidebar"] { background:#FFFFFF; border-right:1px solid #E6EAF2; }
@@ -3105,6 +3108,9 @@ h1,h2,h3,h4,p,li,span,label,div { color:#18212F; }
 .summary-page-break { break-before: page; page-break-before: always; margin-top: 0; }
 .summary-avoid-break, .summary-block, .summary-chartbox, .summary-viz-page { break-inside: avoid; page-break-inside: avoid; }
 .summary-viz-page { margin-top:0; padding-top:0; }
+.summary-page-title { margin:0 0 .35rem 0 !important; }
+.summary-unit { break-inside: avoid; page-break-inside: avoid; margin-bottom: .4rem; }
+.summary-unit h4, .summary-unit h5, .summary-unit h3 { margin-bottom:.15rem !important; page-break-after: avoid; break-after: avoid; }
 .summary-chartbox { margin-top:0 !important; margin-bottom:4px !important; }
 .summary-chartbox h4, .summary-chartbox h5 { margin-bottom:0 !important; }
 .summary-chartbox iframe { margin-top:-6px !important; margin-bottom:-8px !important; }
@@ -3118,6 +3124,7 @@ h1,h2,h3,h4,p,li,span,label,div { color:#18212F; }
 .summary-method-title { font-size:1.05rem; font-weight:700; color:#241D33; margin:2px 0 4px 0; }
 .summary-section-tight h3, .summary-section-tight h4, .summary-section-tight p { margin-bottom: .2rem !important; margin-top: .2rem !important; }
 .summary-footer-note { margin-top: 6px; font-size:.84rem; color:#5B6474; text-align:right; }
+.summary-section-wrap { break-inside: avoid; page-break-inside: avoid; }
 @media (max-width: 980px) {
   .summary-kpi { grid-template-columns:1fr; }
   .summary-grid-tight { grid-template-columns:1fr; }
@@ -3126,15 +3133,15 @@ h1,h2,h3,h4,p,li,span,label,div { color:#18212F; }
   html, body, [data-testid="stAppViewContainer"], .stApp { background:#F6F1FF !important; color:#111111 !important; }
   .kte-hero, .summary-kpi .k { background:#FFFFFF !important; box-shadow:none !important; }
   .summary-page-break { break-before: page; page-break-before: always; }
-  .summary-avoid-break, .summary-block, .summary-chartbox, .summary-viz-page { break-inside: avoid; page-break-inside: avoid; }
+  .summary-avoid-break, .summary-block, .summary-chartbox, .summary-viz-page, .summary-unit, .summary-section-wrap { break-inside: avoid; page-break-inside: avoid; }
   .summary-chartbox iframe { margin-top:-12px !important; margin-bottom:-16px !important; }
   h1, h2, h3, h4, h5 { break-after: avoid; page-break-after: avoid; }
 }
 </style>
 """, unsafe_allow_html=True)
 hero_opponent = st.session_state.get("opponent_name", "").strip()
-hero_meta = f"KTE vs {hero_opponent} • Készítette: Sziegl Gábor" if hero_opponent else "Készítette: Sziegl Gábor"
-st.markdown(f"""<div class='kte-hero'><div class='kte-badge'>KTE</div><div><div style='font-size:1.55rem;font-weight:800;color:#18212F;'>Taktikai döntéselőkészítő ⚽</div><div style='opacity:.9;color:#475467;'>Adatalapú briefing • 10 tényező • 9 stratégia</div><div style='margin-top:4px;color:#344054;font-weight:600;'>{hero_meta}</div></div></div>""", unsafe_allow_html=True)
+hero_meta = f"KTE vs {hero_opponent}\nKészítette: Sziegl Gábor" if hero_opponent else "Készítette: Sziegl Gábor"
+st.markdown(f"""<div class='kte-hero'><div class='kte-hero-left'><div class='kte-badge'>KTE</div><div><div style='font-size:1.55rem;font-weight:800;color:#18212F;'>Taktikai döntéselőkészítő ⚽</div><div style='opacity:.9;color:#475467;'>Adatalapú briefing • 10 tényező • 9 stratégia</div></div></div><div class='kte-hero-meta'>{hero_meta}</div></div>""", unsafe_allow_html=True)
 st.sidebar.caption("A rövidítések a stratégiai paletta elemeit jelölik")
 
 step = st.sidebar.radio(
@@ -3791,9 +3798,6 @@ def render_summary_page(package: Dict[str, object]):
     st.markdown("<div class='summary-shell'>", unsafe_allow_html=True)
     st.markdown("<div style='height:0.8rem;'></div>", unsafe_allow_html=True)
     st.markdown("### Vezetői összegző")
-    opponent_name = pdf_safe_text(p1.get("opponent_name", "") or st.session_state.get("opponent_name", ""))
-    header_meta = f"Ellenfél: {opponent_name} • Készítette: Sziegl Gábor" if opponent_name else "Készítette: Sziegl Gábor"
-    st.markdown(f"<div class='summary-footer-note'>{header_meta}</div>", unsafe_allow_html=True)
 
     st.markdown(f"""
     <div class='summary-kpi'>
@@ -3826,31 +3830,33 @@ def render_summary_page(package: Dict[str, object]):
         merged += [f"Ellenfél: {item}" for item in danger[:2]]
         st.markdown(html_bullets(merged, empty_text="Nincs elérhető gyors összegző lista."), unsafe_allow_html=True)
 
-    st.markdown("<div class='summary-page-break summary-viz-page summary-section-tight'>", unsafe_allow_html=True)
-    st.markdown("#### 📊 Vizualizációk")
-    st.markdown("##### 7 dimenziós profil")
-    st.markdown("<div class='summary-chartbox radar-box'>", unsafe_allow_html=True)
+    st.markdown("<div class='summary-page-break summary-viz-page summary-section-tight summary-section-wrap'>", unsafe_allow_html=True)
+    st.markdown("<h4 class='summary-page-title'>📊 Vizualizációk</h4>", unsafe_allow_html=True)
+    st.markdown("<div class='summary-unit'><h5>7 dimenziós profil</h5><div class='summary-chartbox radar-box'>", unsafe_allow_html=True)
     render_radar_svg(dims, height=520, compact=True)
-    st.markdown("</div>", unsafe_allow_html=True)
-    st.markdown("##### Dimenziók összehasonlítása")
-    st.markdown("<div class='summary-chartbox bar-box'>", unsafe_allow_html=True)
+    st.markdown("</div></div>", unsafe_allow_html=True)
+    st.markdown("<div class='summary-unit'><h5>Dimenziók összehasonlítása</h5><div class='summary-chartbox bar-box'>", unsafe_allow_html=True)
     render_bar_chart(dims, height=500)
-    st.markdown("</div>", unsafe_allow_html=True)
-    st.markdown("##### 9 stratégia térképe")
-    st.markdown("<div class='summary-chartbox map-box'>", unsafe_allow_html=True)
+    st.markdown("</div></div>", unsafe_allow_html=True)
+    st.markdown("<div class='summary-unit'><h5>9 stratégia térképe</h5><div class='summary-chartbox map-box'>", unsafe_allow_html=True)
     render_strategy_map(p1.get("plan_a"), p1.get("plan_b"), height=430)
-    st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown("</div></div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("<div class='summary-page-break summary-section-tight'>", unsafe_allow_html=True)
+    st.markdown("<div class='summary-page-break summary-section-tight summary-section-wrap'>", unsafe_allow_html=True)
     info_left, info_right = st.columns([1.02, 0.98], gap="medium")
     with info_left:
+        st.markdown("<div class='summary-unit'>", unsafe_allow_html=True)
         st.subheader("Matchup-olvasat")
         st.markdown(html_bullets([localize_summary_text(x) for x in ds.get("matchup_notes", [])], limit=4, empty_text="Nincs külön matchup-olvasat."), unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown("<div class='summary-unit'>", unsafe_allow_html=True)
         st.subheader("Várható meccsdinamika")
         dyn = build_detailed_match_dynamics(package)
         st.markdown(html_bullets(dyn, limit=5, empty_text="Nincs külön meccsdinamika-megjegyzés."), unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
     with info_right:
+        st.markdown("<div class='summary-unit'>", unsafe_allow_html=True)
         st.subheader("Vezetői javaslatok")
         rec = [localize_summary_text(x) for x in ds.get("recommendation", [])]
         if not rec:
@@ -3860,14 +3866,19 @@ def render_summary_page(package: Dict[str, object]):
                 "Saját labdával a belső progresszió és a második labdák kontrollja legyen az elsődleges edzői hangsúly.",
             ]
         st.markdown(html_bullets(rec, limit=4), unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
+    st.markdown("<div class='summary-unit'>", unsafe_allow_html=True)
     st.subheader("Negyedórás várható lefolyás")
     st.markdown(html_bullets(quarter_flow, empty_text="Nincs becsült negyedórás meccslefolyás."), unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("<div class='summary-page-break summary-section-tight'>", unsafe_allow_html=True)
+    st.markdown("<div class='summary-page-break summary-section-tight summary-section-wrap'>", unsafe_allow_html=True)
+    st.markdown("<div class='summary-unit'>", unsafe_allow_html=True)
     st.markdown("<div class='summary-method-title'>🧠 Módszertan röviden</div>", unsafe_allow_html=True)
     st.markdown(f"<div class='summary-method compact'>{pdf_safe_text(localize_summary_text(get_methodology_summary()))}</div>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("</div>", unsafe_allow_html=True)
