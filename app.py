@@ -1883,7 +1883,7 @@ def build_html_export(package: Dict[str, object]) -> str:
     .small {{ color:#6C5A88; font-size:12px; }}
     </style></head><body>
     <div class='page'>
-      <div class='brand'><div class='badge'>KTE</div><div><h1>Taktikai döntéselőkészítő ⚽</h1><div class='small'>Adatalapú briefing • 7 dimenzió • 9 stratégia</div></div></div>
+      <div class='brand'><div style='display:flex;align-items:center;gap:14px;'><div class='badge'>KTE</div><div><h1>Taktikai döntéselőkészítő ⚽</h1><div class='small'>Adatalapú briefing • 7 dimenzió • 9 stratégia</div></div></div><div style='font-size:24px;font-weight:700;color:#2F2B53;'>Készítette: Sziegl Gábor</div></div>
       <div class='hero'>
         <div>
           <div style='margin-bottom:10px'><span class='pill'>7 dimenzió</span><span class='pill'>9 stratégia</span><span class='pill'>MI + szakmai modell</span></div>
@@ -2802,7 +2802,9 @@ for k, v in defaults.items():
 st.markdown("""
 <style>
 .stApp { background: linear-gradient(180deg, #F6F1FF 0%, #F9F7FD 52%, #FFFFFF 100%); color:#121826; }
-.kte-hero { display:flex; align-items:center; gap:14px; background:rgba(255,255,255,.92); color:#18212F; padding:16px 18px; border-radius:20px; margin-bottom:16px; border:1px solid #E7DEF8; box-shadow:0 10px 28px rgba(76,46,131,.08); }
+.kte-hero { display:flex; align-items:center; justify-content:space-between; gap:14px; background:rgba(255,255,255,.92); color:#18212F; padding:16px 18px; border-radius:20px; margin-bottom:16px; border:1px solid #E7DEF8; box-shadow:0 10px 28px rgba(76,46,131,.08); }
+.kte-hero-left { display:flex; align-items:center; gap:14px; }
+.kte-author { font-size:1.15rem; font-weight:700; color:#2F2B53; white-space:nowrap; margin-left:18px; }
 .kte-badge { width:52px; height:52px; border-radius:50%; background:linear-gradient(135deg,#F3EFFF,#E7DEFF); color:#5A38A6; border:1px solid #D7C7FB; display:flex; align-items:center; justify-content:center; font-weight:800; }
 .block-container { padding-top: 1.25rem; }
 [data-testid="stSidebar"] { background:#FFFFFF; border-right:1px solid #E6EAF2; }
@@ -2846,7 +2848,7 @@ h1,h2,h3,h4,p,li,span,label,div { color:#18212F; }
 }
 </style>
 """, unsafe_allow_html=True)
-st.markdown("""<div class='kte-hero'><div class='kte-badge'>KTE</div><div><div style='font-size:1.55rem;font-weight:800;color:#18212F;'>Taktikai döntéselőkészítő ⚽</div><div style='opacity:.9;color:#475467;'>Adatalapú briefing • 7 dimenzió • 9 stratégia</div></div></div>""", unsafe_allow_html=True)
+st.markdown("""<div class='kte-hero'><div class='kte-hero-left'><div class='kte-badge'>KTE</div><div><div style='font-size:1.55rem;font-weight:800;color:#18212F;'>Taktikai döntéselőkészítő ⚽</div><div style='opacity:.9;color:#475467;'>Adatalapú briefing • 7 dimenzió • 9 stratégia</div></div></div><div class='kte-author'>Készítette: Sziegl Gábor</div></div>""", unsafe_allow_html=True)
 st.sidebar.caption("A rövidítések a stratégiai paletta elemeit jelölik")
 
 step = st.sidebar.radio(
@@ -3461,7 +3463,6 @@ def render_summary_page(package: Dict[str, object]):
     st.markdown("<div class='summary-shell'>", unsafe_allow_html=True)
     st.markdown("<div style='height:0.8rem;'></div>", unsafe_allow_html=True)
     st.markdown("### Vezetői összegző")
-    st.markdown("<div class='summary-footer-note'>Készítette: Sziegl Gábor</div>", unsafe_allow_html=True)
 
     st.markdown(f"""
     <div class='summary-kpi'>
