@@ -1462,7 +1462,7 @@ def render_methodology_block():
     with st.expander("Metodika / hogyan dolgozik az app", expanded=False):
         st.markdown(
             """
-Ez az alkalmazás **adatalapú taktikai döntéselőkészítő**, amely a match Excel, player Excel és célzott PDF-scouting inputokból épít egységes **matchup-profilt**. A modell a két csapatot **7 taktikai dimenzióban** méri: **letámadás** (labdaszerzés magassága és nyomás), **labdakihozatal** (első két fázis stabilitása), **átmenetek** (gyors helyzetváltás), **támadó játék** (helyzetkialakítás és boxelérés), **pontrúgások**, **labdabirtoklás** és **lövésprofil**. Ezt a képet illeszti rá a **9 alapstratégiára**: **KON** kontra mély blokkból, **GAT** gyors átmenet, **BAT** középső blokk + átmenet, **KIE** kiegyensúlyozott játék, **PRS** presszing + átmenet, **MLT** magas letámadás, **DOM** dominancia, **POZ** pozíciós támadás, **LAB** mélyebb labdatartás. A javaslat tehát nem tipp, hanem több adatforrásból épített matchup-vizsgálat, amelyben **MI-alapú strukturálás** és a saját szakmai finomhangolásod egyszerre jelenik meg. Az edzői beavatkozás után a rendszer végig következetesen újrasúlyozza a képet, így az export már a módosított döntési logikát mutatja.
+Ez a briefing egy adatalapú taktikai döntéselőkészítő rendszerből készül, amely a match Excel, a player Excel és a célzott PDF-scouting inputok alapján épít pontos matchup-profilt. A modell 7 dimenzióban hasonlítja össze a két csapatot: letámadás, labdakihozatal, átmenetek, támadó játék, pontrúgások, labdabirtoklás és lövésprofil. Ezt a képet 9 alapstratégiára vetítjük: KON kontra mély blokkból, GAT gyors átmenet, BAT középső blokk + átmenet, KIE kiegyensúlyozott, PRS presszing + átmenet, MLT magas letámadás, DOM dominancia, POZ pozíciós támadás és LAB mélyebb labdatartás. A Plan A és Plan B tehát egy egzakt statisztikai matchup-vizsgálatból és MI-alapú strukturálásból születik. Az eredmény egy gyorsan értelmezhető, edzői döntést támogató összkép.
             """
         )
 
@@ -1472,8 +1472,8 @@ def get_methodology_summary() -> str:
         "Ez a briefing egy adatalapú taktikai döntéselőkészítő rendszerből készül, amely a match Excel, a player Excel és a célzott PDF-scouting inputok alapján épít pontos matchup-profilt. "
         "A modell 7 dimenzióban hasonlítja össze a két csapatot: letámadás, labdakihozatal, átmenetek, támadó játék, pontrúgások, labdabirtoklás és lövésprofil. "
         "Ezt a képet 9 alapstratégiára vetítjük: KON kontra mély blokkból, GAT gyors átmenet, BAT középső blokk + átmenet, KIE kiegyensúlyozott, PRS presszing + átmenet, MLT magas letámadás, DOM dominancia, POZ pozíciós támadás és LAB mélyebb labdatartás. "
-        "A Plan A és Plan B tehát egy egzakt statisztikai matchup-vizsgálatból és MI-alapú strukturálásból születik"
-        "Az eredmény egy gyorsan értelmezhető, edzői döntést támogató összkép, nem puszta tipp."
+        "A Plan A és Plan B tehát egy egzakt statisztikai matchup-vizsgálatból és MI-alapú strukturálásból születik. "
+        "Az eredmény egy gyorsan értelmezhető, edzői döntést támogató összkép."
     )
 
 
@@ -2873,6 +2873,7 @@ if step == "1. Input":
         kte_player = st.file_uploader("KTE Player Excel", type=["xlsx"], key="kte_player")
         kte_pdf_1 = st.file_uploader("KTE PDF 1", type=["pdf"], key="kte_pdf_1")
         kte_pdf_2 = st.file_uploader("KTE PDF 2", type=["pdf"], key="kte_pdf_2")
+        kte_pdf_3 = st.file_uploader("KTE PDF 3", type=["pdf"], key="kte_pdf_3")
 
     with c2:
         st.subheader("Opponent")
@@ -2913,7 +2914,7 @@ if step == "1. Input":
             opp_match,
             kte_player,
             opp_player,
-            [kte_pdf_1, kte_pdf_2],
+            [kte_pdf_1, kte_pdf_2, kte_pdf_3],
             [opp_pdf_1, opp_pdf_2, opp_pdf_3],
         )
 
@@ -3295,8 +3296,8 @@ if step == "3. Debug":
     opp_match = st.file_uploader("Opponent Match Excel", type=["xlsx"], key="opp_debug_match")
     kte_player = st.file_uploader("KTE Player Excel", type=["xlsx"], key="kte_debug_player")
     opp_player = st.file_uploader("Opponent Player Excel", type=["xlsx"], key="opp_debug_player")
-    kte_pdf = st.file_uploader("KTE PDF", type=["pdf"], key="kte_debug_pdf")
-    opp_pdf = st.file_uploader("Opponent PDF", type=["pdf"], key="opp_debug_pdf")
+    kte_pdfs = st.file_uploader("KTE PDF-k", type=["pdf"], accept_multiple_files=True, key="kte_debug_pdfs")
+    opp_pdfs = st.file_uploader("Opponent PDF-ek", type=["pdf"], accept_multiple_files=True, key="opp_debug_pdfs")
 
     if kte_match:
         team_metrics, team_debug_rows, _, team_matches = parse_excel_metrics_with_debug(kte_match.getvalue())
