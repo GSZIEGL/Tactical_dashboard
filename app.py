@@ -1472,7 +1472,7 @@ def get_methodology_summary() -> str:
         "Ez a briefing egy adatalapú taktikai döntéselőkészítő rendszerből készül, amely a match Excel, a player Excel és a célzott PDF-scouting inputok alapján épít pontos matchup-profilt. "
         "A modell 7 dimenzióban hasonlítja össze a két csapatot: letámadás, labdakihozatal, átmenetek, támadó játék, pontrúgások, labdabirtoklás és lövésprofil. "
         "Ezt a képet 9 alapstratégiára vetítjük: KON kontra mély blokkból, GAT gyors átmenet, BAT középső blokk + átmenet, KIE kiegyensúlyozott, PRS presszing + átmenet, MLT magas letámadás, DOM dominancia, POZ pozíciós támadás és LAB mélyebb labdatartás. "
-        "A Plan A és Plan B ezért nem megérzésből születik, hanem egzakt statisztikai matchup-vizsgálatból, MI-alapú strukturálásból és a saját szakmai modellezésedből. "
+        "A Plan A és Plan B tehát egy egzakt statisztikai matchup-vizsgálatból és MI-alapú strukturálásból születik"
         "Az eredmény egy gyorsan értelmezhető, edzői döntést támogató összkép, nem puszta tipp."
     )
 
