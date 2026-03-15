@@ -2792,19 +2792,24 @@ st.markdown("""
 [data-testid="stSidebar"] { background:#FFFFFF; border-right:1px solid #E6EAF2; }
 [data-testid="stSidebar"] * { color:#18212F !important; }
 h1,h2,h3,h4,p,li,span,label,div { color:#18212F; }
-.summary-shell { margin-top: .65rem; }
-.summary-kpi { display:grid; grid-template-columns:1fr 1fr .9fr; gap:12px; background:transparent; border:none; padding:0; margin-bottom:12px; }
-.summary-kpi .k { background:rgba(255,255,255,.98); border:1px solid #E7DEF8; border-radius:20px; padding:14px 16px; box-shadow:0 10px 24px rgba(76,46,131,.06); min-height:108px; }
-.summary-kpi .n { font-size:1.5rem; font-weight:800; color:#4B2E83; line-height:1.05; margin:3px 0 6px 0; }
-.summary-note { color:#5B6474; font-size:.92rem; line-height:1.35; }
-.summary-grid-tight { display:grid; grid-template-columns:1.2fr .85fr; gap:12px; }
-.summary-micro { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
-.summary-pill { background:#F2ECFF; color:#4B2E83; border:1px solid #DED1FF; padding:5px 10px; border-radius:999px; font-size:.82rem; font-weight:600; }
+.summary-shell { margin-top: .45rem; }
+.summary-kpi { display:grid; grid-template-columns:1fr 1fr .88fr; gap:10px; background:transparent; border:none; padding:0; margin-bottom:10px; }
+.summary-kpi .k { background:rgba(255,255,255,.98); border:1px solid #E7DEF8; border-radius:18px; padding:12px 14px; box-shadow:0 10px 24px rgba(76,46,131,.06); min-height:94px; }
+.summary-kpi .n { font-size:1.42rem; font-weight:800; color:#4B2E83; line-height:1.02; margin:2px 0 4px 0; }
+.summary-note { color:#5B6474; font-size:.9rem; line-height:1.25; }
+.summary-grid-tight { display:grid; grid-template-columns:1.2fr .85fr; gap:10px; }
+.summary-micro { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+.summary-pill { background:#F2ECFF; color:#4B2E83; border:1px solid #DED1FF; padding:4px 9px; border-radius:999px; font-size:.79rem; font-weight:600; }
 .summary-page-break { break-before: page; page-break-before: always; margin-top: 0; }
-.summary-avoid-break, .summary-block, .summary-chartbox { break-inside: avoid; page-break-inside: avoid; }
-.summary-chartbox iframe { margin-bottom: -42px !important; }
-.summary-section-tight h3, .summary-section-tight h4, .summary-section-tight p { margin-bottom: .35rem !important; }
-.summary-footer-note { margin-top: 10px; font-size:.86rem; color:#5B6474; text-align:right; }
+.summary-avoid-break, .summary-block, .summary-chartbox, .summary-viz-page { break-inside: avoid; page-break-inside: avoid; }
+.summary-viz-page { margin-top:0; padding-top:0; }
+.summary-chartbox { margin-top:0 !important; margin-bottom:8px !important; }
+.summary-chartbox iframe { margin-top:-58px !important; margin-bottom:-78px !important; }
+.summary-compact-list { margin:0; padding-left:1rem; }
+.summary-compact-list li { margin:0 0 .18rem 0; line-height:1.22; }
+.summary-method { font-size:.92rem; line-height:1.35; color:#273142; margin-top:4px; }
+.summary-section-tight h3, .summary-section-tight h4, .summary-section-tight p { margin-bottom: .2rem !important; margin-top: .2rem !important; }
+.summary-footer-note { margin-top: 6px; font-size:.84rem; color:#5B6474; text-align:right; }
 @media (max-width: 980px) {
   .summary-kpi { grid-template-columns:1fr; }
   .summary-grid-tight { grid-template-columns:1fr; }
@@ -2813,7 +2818,8 @@ h1,h2,h3,h4,p,li,span,label,div { color:#18212F; }
   html, body, [data-testid="stAppViewContainer"], .stApp { background:#F6F1FF !important; color:#111111 !important; }
   .kte-hero, .summary-kpi .k { background:#FFFFFF !important; box-shadow:none !important; }
   .summary-page-break { break-before: page; page-break-before: always; }
-  .summary-avoid-break, .summary-block, .summary-chartbox { break-inside: avoid; page-break-inside: avoid; }
+  .summary-avoid-break, .summary-block, .summary-chartbox, .summary-viz-page { break-inside: avoid; page-break-inside: avoid; }
+  .summary-chartbox iframe { margin-top:-58px !important; margin-bottom:-78px !important; }
   h1, h2, h3, h4, h5 { break-after: avoid; page-break-after: avoid; }
 }
 </style>
@@ -3353,8 +3359,14 @@ def render_summary_page(package: Dict[str, object]):
     conclusion_lines = build_full_conclusion(package)
     mode_label = "korrigált döntési profil" if p1.get("dimension_mode") == "adjusted" else "alap matchup-profil"
 
+    def html_bullets(items, limit=None, empty_text="-"):
+        rows = items[:limit] if limit else items
+        if not rows:
+            return f"<div class='summary-note'>{pdf_safe_text(empty_text)}</div>"
+        return "<ul class='summary-compact-list'>" + "".join(f"<li>{pdf_safe_text(str(x))}</li>" for x in rows) + "</ul>"
+
     st.markdown("<div class='summary-shell'>", unsafe_allow_html=True)
-    st.markdown("<div style='height:1.0rem;'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:1.15rem;'></div>", unsafe_allow_html=True)
     st.markdown("### Vezetői összegző")
     st.markdown("<div class='summary-footer-note'>Készítette: Sziegl Gábor</div>", unsafe_allow_html=True)
 
@@ -3378,11 +3390,10 @@ def render_summary_page(package: Dict[str, object]):
     </div>
     """, unsafe_allow_html=True)
 
-    top_left, top_right = st.columns([1.2, 0.8])
+    top_left, top_right = st.columns([1.06, 0.94])
     with top_left:
         st.subheader("🎯 Teljes konklúzió")
-        for line in conclusion_lines[:5]:
-            st.write(f"• {line}")
+        st.markdown(html_bullets(conclusion_lines, limit=4), unsafe_allow_html=True)
         st.markdown(
             f"<div class='summary-micro'><span class='summary-pill'>Plan A: {pdf_safe_text(p1.get('plan_a','-'))}</span>"
             f"<span class='summary-pill'>Plan B: {pdf_safe_text(p1.get('plan_b','-'))}</span>"
@@ -3391,42 +3402,34 @@ def render_summary_page(package: Dict[str, object]):
         )
 
     with top_right:
-        st.subheader("⚠️ 3 kulcs és fő kockázatok")
-        for item in p1.get('three_keys', [])[:3]:
-            st.write(f"• Kulcs: {item}")
-        for item in p1.get('risks', [])[:2]:
-            st.write(f"• Kockázat: {item}")
-        st.markdown("<div style='height:0.15rem;'></div>", unsafe_allow_html=True)
-        st.subheader("🚨 Legveszélyesebb ellenfél-játékosok")
-        if danger:
-            for item in danger[:3]:
-                st.write(f"• {item}")
-        else:
-            st.write("Nincs elérhető játékosveszély-lista.")
+        st.subheader("⚠️ 3 kulcs • kockázatok • ellenfélveszély")
+        merged = [f"Kulcs: {item}" for item in p1.get('three_keys', [])[:3]]
+        merged += [f"Kockázat: {item}" for item in p1.get('risks', [])[:1]]
+        merged += [f"Ellenfél: {item}" for item in danger[:2]]
+        st.markdown(html_bullets(merged, empty_text="Nincs elérhető gyors összegző lista."), unsafe_allow_html=True)
 
-    st.markdown("<div class='summary-page-break summary-avoid-break summary-section-tight'>", unsafe_allow_html=True)
+    st.markdown("<div class='summary-page-break summary-viz-page summary-section-tight'>", unsafe_allow_html=True)
     st.markdown("#### 📊 Vizualizációk")
-    c1, c2 = st.columns([0.95, 1.05])
+    c1, c2 = st.columns([0.93, 1.07])
     with c1:
         st.markdown("##### 7 dimenziós profil")
         st.markdown("<div class='summary-chartbox'>", unsafe_allow_html=True)
-        render_radar_svg(dims, height=360)
+        render_radar_svg(dims, height=255)
         st.markdown("</div>", unsafe_allow_html=True)
     with c2:
         st.markdown("##### Dimenziók összehasonlítása")
         st.markdown("<div class='summary-chartbox'>", unsafe_allow_html=True)
-        render_bar_chart(dims, height=240)
+        render_bar_chart(dims, height=205)
         st.markdown("</div>", unsafe_allow_html=True)
     st.markdown("##### 9 stratégia térképe")
     st.markdown("<div class='summary-chartbox'>", unsafe_allow_html=True)
-    render_strategy_map(p1.get("plan_a"), p1.get("plan_b"), height=185)
+    render_strategy_map(p1.get("plan_a"), p1.get("plan_b"), height=145)
     st.markdown("</div>", unsafe_allow_html=True)
     st.subheader("🧠 Módszertan röviden")
-    st.caption(get_methodology_summary())
+    st.markdown(f"<div class='summary-method'>{pdf_safe_text(get_methodology_summary())}</div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("</div>", unsafe_allow_html=True)
-
 
 
 if step == "5. Összegző oldal":
@@ -3484,7 +3487,6 @@ if step == "4. Export Prep":
         sync_coach_texts_from_controls()
         render_methodology_block()
         st.header("Export Prep – template előkészítés")
-        st.caption("Ha a PDF export vizuálisan még nem elég erős, használd az 5. Összegző oldal nézetet: az a képernyőképezhető, egyoldalas briefing felület.")
         if not REPORTLAB_AVAILABLE:
             st.warning("A reportlab nincs telepítve, ezért a PDF gomb szöveges fallback fájlt ad vissza. A teljes, diagramokat is tartalmazó export ilyenkor a HTML fájlban látszik.")
 
