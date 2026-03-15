@@ -1472,6 +1472,18 @@ def render_methodology_block():
         st.markdown(
             """
 Ez a briefing egy adatalapú taktikai döntéselőkészítő rendszerből készül, amely a match Excel, a player Excel és a célzott PDF-scouting inputok alapján épít pontos matchup-profilt. A modell 7 dimenzióban hasonlítja össze a két csapatot: letámadás, labdakihozatal, átmenetek, támadó játék, pontrúgások, labdabirtoklás és lövésprofil. Ezt a képet 9 alapstratégiára vetítjük: KON kontra mély blokkból, GAT gyors átmenet, BAT középső blokk + átmenet, KIE kiegyensúlyozott, PRS presszing + átmenet, MLT magas letámadás, DOM dominancia, POZ pozíciós támadás és LAB mélyebb labdatartás. A Plan A és Plan B tehát egy egzakt statisztikai matchup-vizsgálatból és MI-alapú strukturálásból születik. Az eredmény egy gyorsan értelmezhető, edzői döntést támogató összkép.
+
+**Blokkmagasság**
+- **Mély blokk**: alacsonyabb védekezési kiindulópont, kisebb mélységi kitettség, több területátadás.
+- **Közepes blokk**: kiegyensúlyozott szerkezeti alap, könnyebb váltás vissza- és előrefelé.
+- **Magas blokk**: feljebb induló védekezés, több presszinghelyzet, nagyobb terület a védelem mögött.
+
+**Játékstílus tengely**
+- **Direkt**: gyors vertikális játék, kevesebb előkészítő passz, gyorsabb területnyerés.
+- **Vegyes**: rövid és direkt megoldások váltakozása, matchuphoz igazított ritmusváltás.
+- **Kiegyensúlyozott**: kontroll és vertikalitás közti középút, stabilabb meccsvezetés.
+- **Kontroll**: hosszabb labdás építkezés, türelmesebb pozíciós támadás, nagyobb labdabirtoklási igény.
+- **Agresszív**: magasabb nyomás, gyorsabb támadási szándék, nagyobb variancia és kockázat.
             """
         )
 
@@ -1482,7 +1494,8 @@ def get_methodology_summary() -> str:
         "A modell 7 dimenzióban hasonlítja össze a két csapatot: letámadás, labdakihozatal, átmenetek, támadó játék, pontrúgások, labdabirtoklás és lövésprofil. "
         "Ezt a képet 9 alapstratégiára vetítjük: KON kontra mély blokkból, GAT gyors átmenet, BAT középső blokk + átmenet, KIE kiegyensúlyozott, PRS presszing + átmenet, MLT magas letámadás, DOM dominancia, POZ pozíciós támadás és LAB mélyebb labdatartás. "
         "A Plan A és Plan B tehát egy egzakt statisztikai matchup-vizsgálatból és MI-alapú strukturálásból születik. "
-        "A blokkmagasság tengely azt mutatja, hogy a terv mélyebb, közepes vagy magasabb védelmi pozícióból akar-e működni; a játékstílus tengely pedig a direkt megoldásoktól a kontrollált, hosszabb labdás építkezésig helyezi el a stratégiát. "
+        "Blokkmagasság: mély = alacsonyabb védelmi kiindulópont, közepes = kiegyensúlyozott szerkezeti alap, magas = feljebb induló védekezés és több presszinghelyzet. "
+        "Játékstílus: direkt = gyors vertikális megoldások, vegyes = rövid és direkt megoldások váltakozása, kiegyensúlyozott = kontroll és vertikalitás közti középút, kontroll = türelmesebb labdás építkezés, agresszív = magasabb nyomás és nagyobb variancia. "
         "Az eredmény egy gyorsan értelmezhető, edzői döntést támogató összkép."
     )
 
@@ -2862,6 +2875,10 @@ h1,h2,h3,h4,p,li,span,label,div { color:#18212F; }
 </style>
 """, unsafe_allow_html=True)
 opponent_display_name = st.session_state.get('opponent_display_name', '-')
+manual_opp_name = st.session_state.get('opponent_name_input', '').strip()
+if manual_opp_name:
+    opponent_display_name = manual_opp_name
+    st.session_state['opponent_display_name'] = manual_opp_name
 st.markdown(f"""<div class='kte-hero'><div class='kte-hero-left'><div class='kte-badge'>KTE</div><div><div style='font-size:1.55rem;font-weight:800;color:#18212F;'>Taktikai döntéselőkészítő ⚽</div><div style='opacity:.9;color:#475467;'>Adatalapú briefing • 7 dimenzió • 9 stratégia</div></div></div><div class='kte-author'><span class='opp'>Ellenfél: {pdf_safe_text(opponent_display_name)}</span><span class='by'>Készítette: Sziegl Gábor</span></div></div>""", unsafe_allow_html=True)
 st.sidebar.caption("A rövidítések a stratégiai paletta elemeit jelölik")
 
@@ -2891,6 +2908,7 @@ if step == "1. Input":
 
     with c2:
         st.subheader("Opponent")
+        opponent_name_input = st.text_input("Ellenfél neve", value=st.session_state.get("opponent_name_input", ""), key="opponent_name_input")
         opp_match = st.file_uploader("Opponent Match Excel", type=["xlsx"], key="opp_match")
         opp_player = st.file_uploader("Opponent Player Excel", type=["xlsx"], key="opp_player")
         opp_pdf_1 = st.file_uploader("Opponent PDF 1", type=["pdf"], key="opp_pdf_1")
@@ -2956,7 +2974,7 @@ if step == "1. Input":
         st.session_state["team_pdf_pages"] = team_pdf_pages
         st.session_state["opp_pdf_pages"] = opp_pdf_pages
         st.session_state["opponent_dna_text"] = opponent_dna_text
-        st.session_state["opponent_display_name"] = extract_team_name_from_filename(getattr(opp_match, "name", "Ellenfél"))
+        st.session_state["opponent_display_name"] = (opponent_name_input.strip() if opponent_name_input and opponent_name_input.strip() else extract_team_name_from_filename(getattr(opp_match, "name", "Ellenfél")))
 
         # export-ready structured defaults
         possession_opp = (opp_metrics.get("possession_pct", 0) * 100) if opp_metrics.get("possession_pct", 0) <= 1 else opp_metrics.get("possession_pct", 0)
