@@ -858,6 +858,215 @@ def score_dimensions(metrics: Dict[str, float], matches: int) -> Dict[str, float
     }
 
 
+
+def metric_pct(metrics: Optional[Dict[str, float]], key: str) -> float:
+    if not metrics:
+        return 0.0
+    value = float(metrics.get(key, 0) or 0)
+    return value * 100 if value <= 1 else value
+
+
+def metric_per_match(metrics: Optional[Dict[str, float]], key: str, matches: Optional[int]) -> float:
+    if not metrics:
+        return 0.0
+    return float(metrics.get(key, 0) or 0) / max(matches or 1, 1)
+
+
+def top_player_metric(player_groups: Optional[Dict[str, pd.DataFrame]], group: str, candidates: List[str]) -> float:
+    if not player_groups:
+        return 0.0
+    df = player_groups.get(group)
+    if df is None or df.empty:
+        return 0.0
+    for cand in candidates:
+        for col in df.columns:
+            if str(col).strip().lower() == cand.strip().lower():
+                try:
+                    return float(df.iloc[0][col])
+                except Exception:
+                    return 0.0
+    return 0.0
+
+
+def compute_advanced_matchup_indices(
+    team_metrics: Dict[str, float],
+    opp_metrics: Dict[str, float],
+    team_matches: int,
+    opp_matches: int,
+    team_players: Optional[Dict[str, pd.DataFrame]] = None,
+    opp_players: Optional[Dict[str, pd.DataFrame]] = None,
+    opp_pdf_insights: Optional[Dict[str, object]] = None,
+) -> Dict[str, float]:
+    opp_pass_acc = metric_pct(opp_metrics, "passes_accurate_pct")
+    opp_poss = metric_pct(opp_metrics, "possession_pct")
+    team_press = metric_pct(team_metrics, "pressing_success_pct")
+
+    opp_entries_pm = metric_per_match(opp_metrics, "entries_box", opp_matches)
+    opp_key_pm = metric_per_match(opp_metrics, "key_passes", opp_matches)
+    opp_shots_pm = metric_per_match(opp_metrics, "shots", opp_matches)
+    opp_xg_pm = metric_per_match(opp_metrics, "xg", opp_matches)
+
+    creator_value = top_player_metric(opp_players, "creators", ["key_passes", "Key passes"])
+    progressor_value = top_player_metric(opp_players, "progressors", ["progressive_passes", "Progressive passes"])
+    build_up_value = top_player_metric(opp_players, "build_up", ["passes", "Passes"])
+
+    pass_resistance = normalize_score(opp_pass_acc, 58, 85)
+    creator_resistance = normalize_score(creator_value, 0.5, 5.0)
+    progressor_resistance = normalize_score(progressor_value, 1.0, 9.0)
+    possession_resistance = normalize_score(opp_poss, 35, 65)
+    press_resistance_score = round(
+        0.40 * pass_resistance
+        + 0.22 * progressor_resistance
+        + 0.20 * creator_resistance
+        + 0.18 * possession_resistance,
+        1,
+    )
+
+    entries_threat = normalize_score(opp_entries_pm, 6, 24)
+    keypass_threat = normalize_score(opp_key_pm, 0.8, 7.5)
+    shot_threat = normalize_score(opp_shots_pm, 5, 16)
+    xg_threat = normalize_score(opp_xg_pm, 0.5, 1.8)
+    transition_threat_score = round(
+        0.35 * entries_threat
+        + 0.25 * keypass_threat
+        + 0.20 * shot_threat
+        + 0.20 * xg_threat,
+        1,
+    )
+
+    inverted_pass = normalize_score(100 - opp_pass_acc, 8, 38)
+    team_pressing_leverage = normalize_score(team_press, 30, 70)
+    build_up_stability = normalize_score(build_up_value, 15, 70)
+    pdf_build_penalty = normalize_score(len((opp_pdf_insights or {}).get("build_up_lines", [])), 0, 6)
+    build_up_vulnerability_index = round(
+        0.35 * inverted_pass
+        + 0.30 * team_pressing_leverage
+        + 0.20 * (11 - press_resistance_score)
+        + 0.10 * (11 - build_up_stability)
+        + 0.05 * (11 - pdf_build_penalty),
+        1,
+    )
+
+    return {
+        "BUVI": round(clamp(build_up_vulnerability_index), 1),
+        "TTS": round(clamp(transition_threat_score), 1),
+        "PRS2": round(clamp(press_resistance_score), 1),
+    }
+
+
+def score_strategy_palette(
+    dims: Dict[str, Dict[str, float]],
+    advanced_indices: Dict[str, float],
+) -> Dict[str, float]:
+    buvi = float(advanced_indices.get("BUVI", 5.0))
+    tts = float(advanced_indices.get("TTS", 5.0))
+    prs2 = float(advanced_indices.get("PRS2", 5.0))
+
+    def kte(name: str) -> float:
+        return float(dims.get(name, {}).get("KTE", 5.0))
+
+    def edge(name: str) -> float:
+        return float(dims.get(name, {}).get("Edge", 0.0))
+
+    scores = {
+        "PRS": (
+            0.28 * kte("Letámadás")
+            + 0.20 * kte("Átmenetek")
+            + 0.22 * buvi
+            + 0.15 * (11 - prs2)
+            + 0.15 * clamp(5 + edge("Letámadás"), 1, 10)
+        ),
+        "MLT": (
+            0.30 * kte("Letámadás")
+            + 0.28 * buvi
+            + 0.24 * (11 - prs2)
+            + 0.18 * clamp(5 + edge("Átmenetek"), 1, 10)
+        ),
+        "BAT": (
+            0.20 * kte("Átmenetek")
+            + 0.18 * kte("Labdakihozatal")
+            + 0.18 * kte("Támadó játék")
+            + 0.22 * tts
+            + 0.12 * prs2
+            + 0.10 * (11 - buvi)
+        ),
+        "GAT": (
+            0.30 * kte("Átmenetek")
+            + 0.24 * tts
+            + 0.18 * kte("Támadó játék")
+            + 0.14 * (11 - prs2)
+            + 0.14 * clamp(5 + edge("Átmenetek"), 1, 10)
+        ),
+        "KIE": (
+            0.22 * kte("Labdakihozatal")
+            + 0.20 * kte("Labdabirtoklás")
+            + 0.14 * prs2
+            + 0.14 * (11 - tts)
+            + 0.14 * (11 - buvi)
+            + 0.16 * kte("Támadó játék")
+        ),
+        "POZ": (
+            0.28 * kte("Labdakihozatal")
+            + 0.22 * kte("Labdabirtoklás")
+            + 0.16 * kte("Támadó játék")
+            + 0.16 * prs2
+            + 0.10 * (11 - buvi)
+            + 0.08 * kte("Pontrúgások")
+        ),
+        "DOM": (
+            0.22 * kte("Támadó játék")
+            + 0.20 * kte("Labdakihozatal")
+            + 0.16 * kte("Labdabirtoklás")
+            + 0.12 * kte("Letámadás")
+            + 0.15 * buvi
+            + 0.15 * prs2
+        ),
+        "LAB": (
+            0.34 * kte("Labdabirtoklás")
+            + 0.26 * kte("Labdakihozatal")
+            + 0.18 * prs2
+            + 0.12 * (11 - tts)
+            + 0.10 * (11 - kte("Letámadás"))
+        ),
+        "KON": (
+            0.26 * (11 - prs2)
+            + 0.24 * tts
+            + 0.22 * kte("Átmenetek")
+            + 0.16 * (11 - kte("Labdabirtoklás"))
+            + 0.12 * (11 - kte("Labdakihozatal"))
+        ),
+    }
+    return {k: round(v, 2) for k, v in scores.items()}
+
+
+def pick_strategy_pair(strategy_scores: Dict[str, float]) -> Tuple[str, str, int]:
+    ranked = sorted(strategy_scores.items(), key=lambda x: x[1], reverse=True)
+    plan_a, score_a = ranked[0]
+    plan_b, score_b = ranked[1]
+    gap = max(0.0, score_a - score_b)
+    split = 55 + min(15, int(round(gap * 2.5)))
+    split = max(55, min(70, split))
+    return plan_a, plan_b, split
+
+
+def classify_opponent_archetype(advanced_indices: Dict[str, float], opp_metrics: Dict[str, float], opp_matches: int) -> str:
+    tts = float(advanced_indices.get("TTS", 5.0))
+    prs2 = float(advanced_indices.get("PRS2", 5.0))
+    buvi = float(advanced_indices.get("BUVI", 5.0))
+    opp_poss = metric_pct(opp_metrics, "possession_pct")
+    opp_entries_pm = metric_per_match(opp_metrics, "entries_box", opp_matches)
+
+    if prs2 >= 7.0 and opp_poss >= 52:
+        return "labdabirtokló / presszingálló profil"
+    if tts >= 7.0 and opp_entries_pm >= 15:
+        return "átmeneti / direkt fenyegetés"
+    if buvi >= 7.0:
+        return "presszinggel támadható build-up profil"
+    if prs2 <= 4.8:
+        return "bizonytalan build-up, trigger-presszing célpont"
+    return "vegyes, kiegyensúlyozott profil"
+
+
 def distinct_metric_count(team_metrics: Dict[str, float], opp_metrics: Dict[str, float]) -> int:
     keys = sorted(set(team_metrics.keys()) | set(opp_metrics.keys()))
     return sum(1 for k in keys if team_metrics.get(k, 0) != opp_metrics.get(k, 0))
@@ -909,7 +1118,8 @@ def build_three_keys(dims, opp_pdf_insights, warnings) -> List[str]:
     return unique_keep_order(keys)[:3]
 
 
-def build_match_dynamics(opp_pdf_insights, dims) -> List[str]:
+def build_match_dynamics(opp_pdf_insights, dims, advanced_indices: Optional[Dict[str, float]] = None) -> List[str]:
+    advanced_indices = advanced_indices or {}
     dynamics = []
 
     if opp_pdf_insights and opp_pdf_insights["dynamics_lines"]:
@@ -922,13 +1132,27 @@ def build_match_dynamics(opp_pdf_insights, dims) -> List[str]:
             "A végjátékban nőhet az átmeneti helyzetek száma.",
         ]
 
+    if float(advanced_indices.get("TTS", 0)) >= 6.8:
+        dynamics.append("Az ellenfél átmeneti fenyegetése miatt a labdavesztés utáni első 5 másodperc és a rest defense stabilitása kulcsfontosságú.")
+    if float(advanced_indices.get("BUVI", 0)) >= 6.8:
+        dynamics.append("Magasabb BUVI mellett érdemes több trigger-presszing helyzetet keresni az ellenfél első két passzára.")
+    if float(advanced_indices.get("PRS2", 0)) >= 6.8:
+        dynamics.append("A magasabb presszing-ellenállás miatt a nyomást inkább szakaszosan, nem folyamatosan célszerű alkalmazni.")
+
     if dims["Pontrúgások"]["ELL"] > dims["Pontrúgások"]["KTE"]:
         dynamics.append("A késői szakaszban nőhet az ellenfél pontrúgás-veszélye.")
 
-    return unique_keep_order(dynamics)[:4]
+    return unique_keep_order(dynamics)[:5]
 
 
-def build_opponent_dna_text(opp_pdf_insights, opp_metrics, opp_matches) -> str:
+def build_opponent_dna_text(
+    opp_pdf_insights,
+    opp_metrics,
+    opp_matches,
+    advanced_indices: Optional[Dict[str, float]] = None,
+    opponent_archetype: str = "",
+) -> str:
+    advanced_indices = advanced_indices or {}
     possession = (opp_metrics.get("possession_pct", 0) * 100) if opp_metrics.get("possession_pct", 0) <= 1 else opp_metrics.get("possession_pct", 0)
     shots_pm = round(opp_metrics.get("shots", 0) / max(opp_matches or 1, 1), 2)
     entries_pm = round(opp_metrics.get("entries_box", 0) / max(opp_matches or 1, 1), 2)
@@ -939,9 +1163,11 @@ def build_opponent_dna_text(opp_pdf_insights, opp_metrics, opp_matches) -> str:
 
     return (
         f"Formáció: {formation}\n"
+        f"Archetípus: {opponent_archetype or 'vegyes profil'}\n"
         f"Labdabirtoklás: {round(possession, 1)}%\n"
         f"Lövések / meccs: {shots_pm}\n"
-        f"Box entries / meccs: {entries_pm}\n\n"
+        f"Box entries / meccs: {entries_pm}\n"
+        f"BUVI: {advanced_indices.get('BUVI', 0):.1f} | TTS: {advanced_indices.get('TTS', 0):.1f} | PRS2: {advanced_indices.get('PRS2', 0):.1f}\n\n"
         f"{bullet_text}"
     ).strip()
 
@@ -1471,7 +1697,7 @@ def render_methodology_block():
     with st.expander("Metodika / hogyan dolgozik az app", expanded=False):
         st.markdown(
             """
-Ez a briefing egy adatalapú taktikai döntéselőkészítő rendszerből készül, amely a match Excel, a player Excel és a célzott PDF-scouting inputok alapján épít pontos matchup-profilt. A modell 7 dimenzióban hasonlítja össze a két csapatot: letámadás, labdakihozatal, átmenetek, támadó játék, pontrúgások, labdabirtoklás és lövésprofil. Ezt a képet 9 alapstratégiára vetítjük: KON kontra mély blokkból, GAT gyors átmenet, BAT középső blokk + átmenet, KIE kiegyensúlyozott, PRS presszing + átmenet, MLT magas letámadás, DOM dominancia, POZ pozíciós támadás és LAB mélyebb labdatartás. A Plan A és Plan B tehát egy egzakt statisztikai matchup-vizsgálatból és MI-alapú strukturálásból születik. Az eredmény egy gyorsan értelmezhető, edzői döntést támogató összkép.
+Ez a briefing egy adatalapú taktikai döntéselőkészítő rendszerből készül, amely a match Excel, a player Excel és a célzott PDF-scouting inputok alapján épít pontos matchup-profilt. A modell 7 alapdimenzióban hasonlítja össze a két csapatot: letámadás, labdakihozatal, átmenetek, támadó játék, pontrúgások, labdabirtoklás és lövésprofil. Ezt 3 extra matchup-index egészíti ki: BUVI = build-up sebezhetőség, TTS = átmeneti fenyegetés, PRS2 = presszing-ellenállás. Így a döntési logika összesen 10 tényezőből épül fel, és jobban szétválasztja a hasonló ellenfélprofilokat is. Ezt a képet 9 alapstratégiára vetítjük: KON kontra mély blokkból, GAT gyors átmenet, BAT középső blokk + átmenet, KIE kiegyensúlyozott, PRS presszing + átmenet, MLT magas letámadás, DOM dominancia, POZ pozíciós támadás és LAB mélyebb labdatartás. A Plan A és Plan B tehát egy egzakt statisztikai matchup-vizsgálatból és MI-alapú strukturálásból születik. Az eredmény egy gyorsan értelmezhető, edzői döntést támogató összkép.
 
 **Blokkmagasság**
 - **Mély blokk**: alacsonyabb védekezési kiindulópont, kisebb mélységi kitettség, több területátadás.
@@ -1484,6 +1710,11 @@ Ez a briefing egy adatalapú taktikai döntéselőkészítő rendszerből kész�
 - **Kiegyensúlyozott**: kontroll és vertikalitás közti középút, stabilabb meccsvezetés.
 - **Kontroll**: hosszabb labdás építkezés, türelmesebb pozíciós támadás, nagyobb labdabirtoklási igény.
 - **Agresszív**: magasabb nyomás, gyorsabb támadási szándék, nagyobb variancia és kockázat.
+
+**A 3 extra matchup-index röviden**
+- **BUVI**: magas érték = az ellenfél build-upja jobban támadható presszinggel.
+- **TTS**: magas érték = az ellenfél gyors átmenetből és boxba érkezésből veszélyesebb.
+- **PRS2**: magas érték = az ellenfél jobban ellenáll a presszingnek és könnyebben kijön a nyomásból.
             """
         )
 
@@ -1906,7 +2137,7 @@ def build_html_export(package: Dict[str, object]) -> str:
     .small {{ color:#6C5A88; font-size:12px; }}
     </style></head><body>
     <div class='page'>
-      <div class='brand'><div style='display:flex;align-items:center;gap:14px;'><div class='badge'>KTE</div><div><h1>Taktikai döntéselőkészítő ⚽</h1><div class='small'>Adatalapú briefing • 7 dimenzió • 9 stratégia</div></div></div><div style='font-size:22px;font-weight:700;color:#2F2B53;text-align:right;'><div style='font-size:24px;font-weight:800;color:#221B44;'>Ellenfél: {pdf_safe_text(p1.get('opponent_display_name', '-'))}</div><div>Készítette: Sziegl Gábor</div></div></div>
+      <div class='brand'><div style='display:flex;align-items:center;gap:14px;'><div class='badge'>KTE</div><div><h1>Taktikai döntéselőkészítő ⚽</h1><div class='small'>Adatalapú briefing • 7 alapdimenzió + 3 matchup-index • 9 stratégia</div></div></div><div style='font-size:22px;font-weight:700;color:#2F2B53;text-align:right;'><div style='font-size:24px;font-weight:800;color:#221B44;'>Ellenfél: {pdf_safe_text(p1.get('opponent_display_name', '-'))}</div><div>Készítette: Sziegl Gábor</div></div></div>
       <div class='hero'>
         <div>
           <div style='margin-bottom:10px'><span class='pill'>7 dimenzió</span><span class='pill'>9 stratégia</span><span class='pill'>MI + szakmai modell</span></div>
@@ -1978,7 +2209,7 @@ def _pdf_draw_page_bg(c, width, height, title):
     c.drawString(70, height - 54, pdf_safe_text(title))
     c.setFillColor(colors.HexColor("#6E5A87"))
     c.setFont(PDF_FONT_NAME, 10)
-    c.drawString(70, height - 72, pdf_safe_text("Adatalapú briefing · 7 dimenzió · 9 stratégia"))
+    c.drawString(70, height - 72, pdf_safe_text("Adatalapú briefing · 7 alapdimenzió + 3 matchup-index · 9 stratégia"))
     c.setFillColor(colors.HexColor("#D8C7EB"))
     c.circle(width - 38, height - 48, 8, stroke=0, fill=1)
     c.circle(width - 62, height - 72, 5, stroke=0, fill=1)
@@ -2389,6 +2620,7 @@ def build_markdown_export(package: Dict[str, object]) -> str:
     md.append(f"- Plan B: {p1['plan_b']}")
     md.append(f"- Arány: {p1['plan_split']}")
     md.append(f"- Dimenzió mód: {p1.get('dimension_mode', 'base')}")
+    md.append(f"- Archetípus / indexek: {p1.get('opponent_profile', '-')}")
     md.append("")
     md.append("### Ellenfél profil")
     md.append(p1["opponent_profile"])
@@ -2566,17 +2798,6 @@ def run_engine(
             "Edge": round(team_scores[k] - opp_scores[k], 1),
         }
 
-    edge_transition = team_scores["Átmenetek"] - opp_scores["Lövésprofil"]
-    edge_control = team_scores["Labdakihozatal"] + team_scores["Labdabirtoklás"] - opp_scores["Letámadás"]
-    edge_attack = team_scores["Támadó játék"] + team_scores["Pontrúgások"] - opp_scores["Labdabirtoklás"]
-
-    if edge_transition >= max(edge_control, edge_attack):
-        suggested_a, suggested_b, suggested_split = "GAT", "BAT", 60
-    elif edge_control >= max(edge_transition, edge_attack):
-        suggested_a, suggested_b, suggested_split = "KIE", "POZ", 55
-    else:
-        suggested_a, suggested_b, suggested_split = "PRS", "MLT", 55
-
     team_players = parse_player_excel(team_player_file.getvalue()) if team_player_file else None
     opp_players = parse_player_excel(opp_player_file.getvalue()) if opp_player_file else None
 
@@ -2586,10 +2807,23 @@ def run_engine(
     team_pdf_insights = build_pdf_insights(team_pdf_text) if team_pdf_text.strip() else None
     opp_pdf_insights = build_pdf_insights(opp_pdf_text) if opp_pdf_text.strip() else None
 
+    advanced_indices = compute_advanced_matchup_indices(
+        team_metrics=team_metrics,
+        opp_metrics=opp_metrics,
+        team_matches=team_matches,
+        opp_matches=opp_matches,
+        team_players=team_players,
+        opp_players=opp_players,
+        opp_pdf_insights=opp_pdf_insights,
+    )
+    strategy_scores = score_strategy_palette(dims, advanced_indices)
+    suggested_a, suggested_b, suggested_split = pick_strategy_pair(strategy_scores)
+
     warnings = build_warning_list(opp_players, opp_pdf_insights)
     three_keys = build_three_keys(dims, opp_pdf_insights, warnings)
-    match_dynamics = build_match_dynamics(opp_pdf_insights, dims)
-    opponent_dna_text = build_opponent_dna_text(opp_pdf_insights, opp_metrics, opp_matches)
+    match_dynamics = build_match_dynamics(opp_pdf_insights, dims, advanced_indices)
+    opponent_archetype = classify_opponent_archetype(advanced_indices, opp_metrics, opp_matches)
+    opponent_dna_text = build_opponent_dna_text(opp_pdf_insights, opp_metrics, opp_matches, advanced_indices, opponent_archetype)
 
     return (
         dims,
@@ -2616,6 +2850,9 @@ def run_engine(
         team_pdf_pages,
         opp_pdf_pages,
         opponent_dna_text,
+        advanced_indices,
+        strategy_scores,
+        opponent_archetype,
     )
 
 
@@ -2879,7 +3116,7 @@ manual_opp_name = st.session_state.get('opponent_name_input', '').strip()
 if manual_opp_name:
     opponent_display_name = manual_opp_name
     st.session_state['opponent_display_name'] = manual_opp_name
-st.markdown(f"""<div class='kte-hero'><div class='kte-hero-left'><div class='kte-badge'>KTE</div><div><div style='font-size:1.55rem;font-weight:800;color:#18212F;'>Taktikai döntéselőkészítő ⚽</div><div style='opacity:.9;color:#475467;'>Adatalapú briefing • 7 dimenzió • 9 stratégia</div></div></div><div class='kte-author'><span class='opp'>Ellenfél: {pdf_safe_text(opponent_display_name)}</span><span class='by'>Készítette: Sziegl Gábor</span></div></div>""", unsafe_allow_html=True)
+st.markdown(f"""<div class='kte-hero'><div class='kte-hero-left'><div class='kte-badge'>KTE</div><div><div style='font-size:1.55rem;font-weight:800;color:#18212F;'>Taktikai döntéselőkészítő ⚽</div><div style='opacity:.9;color:#475467;'>Adatalapú briefing • 7 alapdimenzió + 3 matchup-index • 9 stratégia</div></div></div><div class='kte-author'><span class='opp'>Ellenfél: {pdf_safe_text(opponent_display_name)}</span><span class='by'>Készítette: Sziegl Gábor</span></div></div>""", unsafe_allow_html=True)
 st.sidebar.caption("A rövidítések a stratégiai paletta elemeit jelölik")
 
 step = st.sidebar.radio(
@@ -2941,6 +3178,9 @@ if step == "1. Input":
             team_pdf_pages,
             opp_pdf_pages,
             opponent_dna_text,
+            advanced_indices,
+            strategy_scores,
+            opponent_archetype,
         ) = run_engine(
             kte_match,
             opp_match,
@@ -2974,6 +3214,9 @@ if step == "1. Input":
         st.session_state["team_pdf_pages"] = team_pdf_pages
         st.session_state["opp_pdf_pages"] = opp_pdf_pages
         st.session_state["opponent_dna_text"] = opponent_dna_text
+        st.session_state["advanced_indices"] = advanced_indices
+        st.session_state["strategy_scores"] = strategy_scores
+        st.session_state["opponent_archetype"] = opponent_archetype
         st.session_state["opponent_display_name"] = (opponent_name_input.strip() if opponent_name_input and opponent_name_input.strip() else extract_team_name_from_filename(getattr(opp_match, "name", "Ellenfél")))
 
         # export-ready structured defaults
@@ -2996,15 +3239,17 @@ if step == "1. Input":
 
         st.session_state["opponent_profile_text"] = (
             f"Formáció: {(opp_pdf_insights['formation'] if opp_pdf_insights else 'n.a.')} | "
-            f"Labdabirtoklás: {round(possession_opp, 1)}% | "
-            f"Lövések / meccs: {round(opp_metrics.get('shots', 0) / max(opp_matches or 1, 1), 2)} | "
-            f"Box entries / meccs: {round(opp_metrics.get('entries_box', 0) / max(opp_matches or 1, 1), 2)}"
+            f"Archetípus: {opponent_archetype} | "
+            f"BUVI: {advanced_indices.get('BUVI', 0):.1f}/10 | "
+            f"TTS: {advanced_indices.get('TTS', 0):.1f}/10 | "
+            f"PRS2: {advanced_indices.get('PRS2', 0):.1f}/10"
         )
         st.session_state["own_state_text"] = (
             f"KTE passzpontosság: {round((team_metrics.get('passes_accurate_pct', 0) * 100) if team_metrics.get('passes_accurate_pct', 0) <= 1 else team_metrics.get('passes_accurate_pct', 0), 1)}% | "
             f"KTE labdabirtoklás: {round(possession_team, 1)}% | "
             f"KTE lövések / meccs: {round(team_metrics.get('shots', 0) / max(team_matches or 1, 1), 2)} | "
-            f"KTE key passes / meccs: {round(team_metrics.get('key_passes', 0) / max(team_matches or 1, 1), 2)}"
+            f"KTE key passes / meccs: {round(team_metrics.get('key_passes', 0) / max(team_matches or 1, 1), 2)} | "
+            f"Matchup-indexek: BUVI {advanced_indices.get('BUVI', 0):.1f} · TTS {advanced_indices.get('TTS', 0):.1f} · PRS2 {advanced_indices.get('PRS2', 0):.1f}"
         )
 
         sync_coach_texts_from_controls()
