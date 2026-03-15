@@ -1067,219 +1067,6 @@ def classify_opponent_archetype(advanced_indices: Dict[str, float], opp_metrics:
     return "vegyes, kiegyensúlyozott profil"
 
 
-
-
-def get_strategy_narrative_profile(code: str) -> Dict[str, object]:
-    profiles = {
-        "PRS": {
-            "title": "presszing + átmenet",
-            "start": "triggeralapú presszing a középső-középmagas zónában",
-            "with_ball": "gyors vertikális továbbjáték a labdaszerzés után",
-            "without_ball": "középső blokk, agresszív kilépésekkel",
-            "switch": "ha a presszing első hulláma nem hoz labdát, vissza kell rendeződni stabil középső blokkba",
-            "phase_lines": ["a kezdésben pressing-triggereket kell keresni", "a középső szakaszban a labdaszerzések utáni első két passz minősége döntő", "a végjátékban a második labdák és a rest defense adja a stabilitást"],
-        },
-        "BAT": {
-            "title": "középső blokk + átmenet",
-            "start": "türelmes, szerkezetalapú középső blokk",
-            "with_ball": "labdaszerzés után gyors átmeneti támadás, de nem folyamatos direkt játék",
-            "without_ball": "középső blokk, csatornazárással és irányított tereléssel",
-            "switch": "ha az ellenfél visszazár, a Plan B dominanciásabb labdás fázisba fordítható át",
-            "phase_lines": ["a kezdésben a középső zónás kontroll a fő cél", "a középső szakaszban a pressing-csapdákból kell labdát nyerni", "a végjátékban a strukturált átmenetek és a boxelőtti kontroll maradjon meg"],
-        },
-        "DOM": {
-            "title": "dominancia",
-            "start": "labdás kontroll és magasabb területi nyomás",
-            "with_ball": "pozíciós támadás és türelmes helyzetépítés",
-            "without_ball": "magasabban tartott szerkezet, visszatámadási készültséggel",
-            "switch": "ha az ellenfél átmenetei veszélyesebbek, dominanciából gyorsan vissza kell venni középső blokkba",
-            "phase_lines": ["a kezdésben területi kontrollt kell építeni", "a középső szakaszban a half-space túlterhelések lehetnek kulcsok", "a végjátékban a visszatámadás és a pontrúgás utáni biztosítás fontos"],
-        },
-        "MLT": {
-            "title": "magas letámadás",
-            "start": "korai, intenzív nyomás az ellenfél első passzaira",
-            "with_ball": "rövid úton kapu felé forduló támadások",
-            "without_ball": "magas blokk és szűk területvédekezés az ellenfél térfelén",
-            "switch": "ha az ellenfél kijön a nyomásból, azonnal vissza kell rendeződni BAT/KIE jellegű szerkezetbe",
-            "phase_lines": ["a kezdésben a magas labdanyerések száma a döntő", "a középső szakaszban a presszing mögötti tér kontrollja kritikus", "a végjátékban az intenzitás menedzselése válik kulccsá"],
-        },
-        "GAT": {
-            "title": "gyors átmenet",
-            "start": "visszafogottabb kezdet, átmeneti pillanatok keresésével",
-            "with_ball": "gyors direkt továbbjáték a mélységbe",
-            "without_ball": "középső-mély blokk, futóversenyekre készülve",
-            "switch": "ha az ellenfél nem ad mélységet, labdás kontrollt kell hozzátenni",
-            "phase_lines": ["a kezdésben a területek olvasása fontosabb, mint a folyamatos nyomás", "a középső szakaszban a direkt átmeneti helyzeteket kell maximalizálni", "a végjátékban a második hullámos érkezések emelhetik a veszélyt"],
-        },
-        "KIE": {
-            "title": "kiegyensúlyozott",
-            "start": "mérsékelt kockázatú, kontrollált meccsnyitás",
-            "with_ball": "vegyes build-up és türelmes progresszió",
-            "without_ball": "közepes blokk, szakaszos kilépésekkel",
-            "switch": "a mérkőzés állása alapján könnyen eltolható presszing vagy kontroll felé",
-            "phase_lines": ["a kezdésben a szerkezeti stabilitás a legfontosabb", "a középső szakaszban a ritmusváltások adhatnak edge-et", "a végjátékban a döntési fegyelem maradjon meg"],
-        },
-        "POZ": {
-            "title": "pozíciós támadás",
-            "start": "labdás kontroll és helyzeti fölény kialakítása",
-            "with_ball": "pozíciós, türelmes támadásépítés half-space hangsúllyal",
-            "without_ball": "magasabban tartott területi kontroll",
-            "switch": "ha a labdás fölény nem hoz bejutást, gyorsítani kell a tempót és a ritmusváltást",
-            "phase_lines": ["a kezdésben a szerkezeti fölény kiépítése a cél", "a középső szakaszban a belső csatornák terhelése hozhat áttörést", "a végjátékban a pozíciós kontroll mellett a visszatámadás védje a csapatot"],
-        },
-        "LAB": {
-            "title": "mélyebb labdatartás",
-            "start": "alacsonyabb tempójú, kontrollált labdajáratás",
-            "with_ball": "mélyebb build-up és türelmes területnyitás",
-            "without_ball": "alacsonyabb blokk, kontrollált visszarendeződés",
-            "switch": "ha az ellenfél passzív, feljebb kell tolni a támadási súlypontot",
-            "phase_lines": ["a kezdésben a saját ritmust kell felépíteni", "a középső szakaszban a türelmes oldalváltások nyithatnak helyzetet", "a végjátékban a labdabirtoklás védekezési funkciója is fontos"],
-        },
-        "KON": {
-            "title": "kontra mély blokkból",
-            "start": "mélyebb szerkezet és gyors kontralehetőség keresése",
-            "with_ball": "minél rövidebb úton mélységi támadás",
-            "without_ball": "mély blokk és boxvédekezés",
-            "switch": "ha korán hátrányba kerül a csapat, feljebb kell vinni a blokkot és a pressinget",
-            "phase_lines": ["a kezdésben a területzárás az első", "a középső szakaszban a kontrák minősége dönt", "a végjátékban a mély védekezés és a pontrúgás-védelem marad kritikus"],
-        },
-    }
-    return profiles.get(code, profiles["KIE"])
-
-
-def get_dim_rankings(dims: Dict[str, Dict[str, float]]) -> Tuple[List[str], List[str]]:
-    edges = sorted(((k, float(v.get("Edge", 0))) for k, v in (dims or {}).items()), key=lambda x: x[1], reverse=True)
-    strengths = [k for k, e in edges if e > 0][:3]
-    risks = [k for k, e in sorted(edges, key=lambda x: x[1]) if e < 0][:3]
-    return strengths, risks
-
-
-def build_dynamic_three_keys(plan_a: str, dims, advanced_indices, warnings, opp_pdf_insights) -> List[str]:
-    advanced_indices = advanced_indices or {}
-    strengths, risks = get_dim_rankings(dims)
-    profile = get_strategy_narrative_profile(plan_a)
-    keys = []
-    if plan_a == "PRS":
-        keys.append("Az első kulcs a triggeralapú presszing legyen: a nyomást ne folyamatosan, hanem az ellenfél hibára kényszerítésére időzítve indítsd.")
-    elif plan_a == "BAT":
-        keys.append("Az első kulcs a középső blokk szerkezeti fegyelme: a tengelyt zárva kell az ellenfelet oldalra terelni, majd onnan labdát nyerni.")
-    elif plan_a == "DOM":
-        keys.append("Az első kulcs a területi kontroll és a stabil labdás fölény felépítése, hogy az ellenfél ne tudjon ritmust váltani.")
-    elif plan_a == "MLT":
-        keys.append("Az első kulcs a korai magas labdanyerés: az első két passzra kell rámenni, de csak rendezett biztosítás mellett.")
-    else:
-        keys.append(f"Az első kulcs a(z) {profile['title']} terv tiszta végrehajtása, főleg a meccs első két szakaszában.")
-
-    if strengths:
-        top = strengths[:2]
-        keys.append("A második kulcs a saját erősségek ráerőltetése: " + ", ".join(x.lower() for x in top) + " területén kell fölényt kialakítani.")
-    elif risks:
-        keys.append("A második kulcs a saját kockázati pontok menedzselése: " + ", ".join(x.lower() for x in risks[:2]) + " nem nyílhat ki kontroll nélkül.")
-
-    buvi = float(advanced_indices.get('BUVI', 5))
-    tts = float(advanced_indices.get('TTS', 5))
-    prs2 = float(advanced_indices.get('PRS2', 5))
-    if tts >= max(buvi, prs2) and tts >= 6:
-        keys.append("A harmadik kulcs az átmeneti védekezés és a rest defense: az ellenfél gyors támadásai ellen az első visszarendeződés minősége döntő lehet.")
-    elif buvi >= max(tts, prs2) and buvi >= 6:
-        keys.append("A harmadik kulcs az ellenfél build-upjának támadása: több labdaszerzés kényszeríthető ki a nyomás és a terelés jó kombinációjával.")
-    elif prs2 >= 6:
-        keys.append("A harmadik kulcs a presszing adagolása: a túl korai vagy túl hosszú nyomás helyett szakaszos, csapdaalapú pressingre van szükség.")
-    elif warnings:
-        keys.append(str(warnings[0]).rstrip('.') + ".")
-
-    if opp_pdf_insights and opp_pdf_insights.get('set_piece_lines'):
-        keys.append("Pontrúgásoknál az első kontakt és a lecsorgók kontrollja külön figyelmet kér.")
-    return unique_keep_order(keys)[:3]
-
-
-def build_dynamic_match_dynamics(plan_a: str, controls: Dict[str, object], advanced_indices: Dict[str, float], opponent_archetype: str, dims, opp_pdf_insights) -> List[str]:
-    profile = get_strategy_narrative_profile(plan_a)
-    scenario = localize_summary_text(label_scenario(controls.get('match_scenario') or 'balanced')).lower()
-    zone = localize_summary_text(str(controls.get('pressing_zone') or 'közép')).lower()
-    buildup = localize_summary_text(str(controls.get('build_up_solution') or 'vegyes')).lower()
-    block = localize_summary_text(str(controls.get('defensive_block') or 'közepes')).lower()
-    buvi = float(advanced_indices.get('BUVI', 5))
-    tts = float(advanced_indices.get('TTS', 5))
-    prs2 = float(advanced_indices.get('PRS2', 5))
-    bullets = [
-        f"A várható meccskép {scenario}, de a fő taktikai identitást a(z) {label_strategy(plan_a)} adja: {profile['start']}.",
-        f"Labdával a {buildup} build-up a kiindulópont, labda nélkül pedig a {block} blokk; a pressing elsődleges indítási zónája a {zone}.",
-    ]
-    if 'presszingálló' in (opponent_archetype or '') or prs2 >= 6.8:
-        bullets.append("Az ellenfél jól ellenállhat a nyomásnak, ezért a presszinget nem folyamatosan, hanem előre meghatározott váltási jelekre kell építeni.")
-    elif buvi >= 6.8:
-        bullets.append("Az ellenfél build-upja támadhatóbb, ezért a mérkőzés több szakaszában is megéri rámenni az első két passzra és a terelés utáni labdanyerésre.")
-    if tts >= 6.8:
-        bullets.append("Az ellenfél átmenetből veszélyesebb profil, ezért a rest defense, a második labdák és a box előtti reakciók nem lazulhatnak meg.")
-    else:
-        bullets.append("Az ellenfél átmeneti fenyegetése mérsékeltebb, ezért nagyobb hangsúly tehető a saját ritmusváltásokra és a türelmesebb támadásépítésre.")
-    bullets.append(f"A terv váltási logikája: {profile['switch']}")
-    if opp_pdf_insights and opp_pdf_insights.get('dynamics_lines'):
-        for line in opp_pdf_insights['dynamics_lines'][:2]:
-            bullets.append(str(line).strip())
-    return unique_keep_order(bullets)[:6]
-
-
-def build_dynamic_risks(plan_a: str, dims, advanced_indices: Dict[str, float], warnings: List[str], opp_players=None) -> List[str]:
-    advanced_indices = advanced_indices or {}
-    strengths, weaks = get_dim_rankings(dims or {})
-    buvi = float(advanced_indices.get("BUVI", 5))
-    tts = float(advanced_indices.get("TTS", 5))
-    prs2 = float(advanced_indices.get("PRS2", 5))
-    risks = []
-    if tts >= 6.8:
-        risks.append("Az ellenfél átmeneti fenyegetése magas, ezért a rest defense és a második labdák kontrollja elsődleges kockázati pont.")
-    if prs2 >= 6.5:
-        risks.append("Az ellenfél jobban kijöhet a nyomásból, ezért a túl korai vagy túl hosszú presszing visszaüthet.")
-    if buvi <= 4.5:
-        risks.append("Az ellenfél build-upja kevésbé támadható, ezért a kényszerített magas pressing könnyen szerkezeti nyílást okozhat.")
-    if weaks:
-        risks.append("A saját kockázati oldal jelenleg: " + ", ".join(x.lower() for x in weaks[:2]) + ".")
-    for w in warnings[:2]:
-        risks.append(str(w).rstrip('.') + ".")
-    if opp_players is not None and not getattr(opp_players.get("creators"), "empty", True):
-        row = opp_players["creators"].iloc[0]
-        pname = str(row.get("player") or row.get("Player") or "").strip()
-        if pname:
-            risks.append(f"{pname} kreatív végrehajtóként a half-space zónákban jelent kiemelt veszélyt.")
-    return unique_keep_order(risks)[:3]
-
-
-def build_dynamic_conclusion(plan_a: str, plan_b: str, dims, controls: Dict[str, object], advanced_indices: Dict[str, float], opponent_archetype: str, three_keys: List[str], risks: List[str], danger: List[str]) -> List[str]:
-    profile = get_strategy_narrative_profile(plan_a)
-    strengths, weaks = get_dim_rankings(dims or {})
-    buildup = localize_summary_text(str(controls.get("build_up_solution") or "vegyes")).lower()
-    block = localize_summary_text(str(controls.get("defensive_block") or "közepes")).lower()
-    scenario = localize_summary_text(label_scenario(controls.get("match_scenario") or "balanced")).lower()
-    plan_weight = int(controls.get("plan_a_emphasis", 55))
-    buvi = float(advanced_indices.get("BUVI", 5))
-    tts = float(advanced_indices.get("TTS", 5))
-    prs2 = float(advanced_indices.get("PRS2", 5))
-    bullets = [
-        f"Alapjavaslat: a mérkőzés elsődleges terve legyen a(z) {label_strategy(plan_a)}, mert ez illeszkedik legjobban az ellenfél {opponent_archetype.lower() if opponent_archetype else 'aktuális'} profiljához.",
-        f"A terv gerince labdával a {buildup} build-up, labda nélkül pedig a {block} blokk; a meccs ritmusa várhatóan {scenario}, ezért a váltások időzítése fontosabb, mint a folyamatos nyomás.",
-    ]
-    if buvi >= 6.8:
-        bullets.append("Az ellenfél build-upja támadható, ezért több szakaszban is érdemes pressinggel rámenni az első két passzra és terelésből labdát nyerni.")
-    elif prs2 >= 6.8:
-        bullets.append("Az ellenfél jobban jöhet ki a presszingből, ezért a nyomást triggerhez kell kötni, és inkább középső blokkos csapdahelyzeteket kell keresni.")
-    if tts >= 6.8:
-        bullets.append("Az ellenfél legnagyobb veszélye az átmeneti támadás, ezért a rest defense és a visszarendeződés minősége döntő eleme a meccstervnek.")
-    if strengths:
-        bullets.append("A saját matchup-előnyök elsősorban a következő területeken használhatók ki: " + ", ".join(x.lower() for x in strengths[:2]) + ".")
-    if weaks:
-        bullets.append("A legfontosabb óvatossági pontok: " + ", ".join(x.lower() for x in weaks[:2]) + ".")
-    if three_keys:
-        bullets.append("A terv konkrét végrehajtási kulcsai: " + " | ".join(three_keys[:2]))
-    if risks:
-        bullets.append("Fő kockázat: " + risks[0])
-    if danger:
-        bullets.append("Legveszélyesebb ellenfél-játékosok: " + ", ".join(x.split(" – ")[0] for x in danger[:3]) + ".")
-    bullets.append(f"A váltási logika {plan_weight}/{100-plan_weight} arányban az A terv felé húz; a(z) {label_strategy(plan_b)} elemek akkor aktiválhatók, ha a kiinduló terv nem ad elég területi vagy labdanyerési edge-et.")
-    return unique_keep_order(bullets)[:7]
-
-
 def distinct_metric_count(team_metrics: Dict[str, float], opp_metrics: Dict[str, float]) -> int:
     keys = sorted(set(team_metrics.keys()) | set(opp_metrics.keys()))
     return sum(1 for k in keys if team_metrics.get(k, 0) != opp_metrics.get(k, 0))
@@ -1640,67 +1427,28 @@ def build_coach_summary(controls: Dict[str, object]) -> Dict[str, str]:
 
 def sync_coach_texts_from_controls():
     controls = get_current_coach_controls()
+    summary = build_coach_summary(controls)
+    for k, v in summary.items():
+        st.session_state[k] = v
     st.session_state["selected_plan_a"] = controls["primary_model"]
     st.session_state["selected_plan_b"] = controls["secondary_model"]
     st.session_state["selected_split"] = int(controls["plan_a_emphasis"])
-
     base_dims = st.session_state.get("dims")
-    if not base_dims:
-        summary = build_coach_summary(controls)
-        for k, v in summary.items():
-            st.session_state[k] = v
-        return
-
-    adjusted_dims, impact_df, comparison_df = apply_coach_adjustments(base_dims, controls)
-    st.session_state["dims_adjusted"] = adjusted_dims
-    st.session_state["coach_impact_df"] = impact_df
-    st.session_state["coach_dim_comparison"] = comparison_df
-
-    effective_dims = adjusted_dims if st.session_state.get("use_adjusted_dims", True) else base_dims
-    advanced_indices = st.session_state.get("advanced_indices", {}) or {}
-    opp_pdf_insights = st.session_state.get("opp_pdf_insights")
-    opp_players = st.session_state.get("opp_players")
-    opp_metrics = st.session_state.get("opp_metrics") or {}
-    opp_matches = st.session_state.get("opp_matches") or 1
-    opponent_archetype = st.session_state.get("opponent_archetype") or classify_opponent_archetype(advanced_indices, opp_metrics, opp_matches)
-    warnings = build_warning_list(opp_players, opp_pdf_insights)
-
-    three_keys = build_dynamic_three_keys(controls["primary_model"], effective_dims, advanced_indices, warnings, opp_pdf_insights)
-    risks = build_dynamic_risks(controls["primary_model"], effective_dims, advanced_indices, warnings, opp_players)
-    match_dynamics = build_dynamic_match_dynamics(controls["primary_model"], controls, advanced_indices, opponent_archetype, effective_dims, opp_pdf_insights)
-    opponent_dna_text = build_opponent_dna_text(opp_pdf_insights, opp_metrics, opp_matches, advanced_indices, opponent_archetype)
-
-    threat_map = {
-        "creators": df_to_records(opp_players["creators"]) if opp_players else [],
-        "progressors": df_to_records(opp_players["progressors"]) if opp_players else [],
-        "build_up": df_to_records(opp_players["build_up"]) if opp_players else [],
-        "defenders": df_to_records(opp_players["defenders"]) if opp_players else [],
-        "duel_players": df_to_records(opp_players["duel_players"]) if opp_players else [],
-    }
-    danger = summarize_danger_players(threat_map)
-    conclusion_lines = build_dynamic_conclusion(
-        controls["primary_model"], controls["secondary_model"], effective_dims, controls, advanced_indices, opponent_archetype, three_keys, risks, danger
-    )
-
-    st.session_state["opponent_profile_text"] = (
-        f"Archetípus: {opponent_archetype} | BUVI: {advanced_indices.get('BUVI', 0):.1f} | TTS: {advanced_indices.get('TTS', 0):.1f} | PRS2: {advanced_indices.get('PRS2', 0):.1f}"
-    )
-    st.session_state["own_state_text"] = (
-        f"Plan A: {controls.get('primary_model')} | Plan B: {controls.get('secondary_model')} | Labdakihozatal: {controls.get('build_up_solution')} | Blokk: {controls.get('defensive_block')} | Presszing zóna: {controls.get('pressing_zone')}"
-    )
-    st.session_state["three_keys_text"] = "
-".join(f"- {x}" for x in three_keys)
-    st.session_state["risks_text"] = "
-".join(f"- {x}" for x in risks)
-    st.session_state["match_dynamics_text"] = "
-".join(f"- {x}" for x in match_dynamics)
-    st.session_state["conclusion_text"] = "
-".join(f"- {x}" for x in conclusion_lines)
-    st.session_state["opponent_dna_text"] = opponent_dna_text
-
-    st.session_state["decision_support"] = build_decision_support(
-        base_dims, adjusted_dims, controls, st.session_state.get("team_metrics"), st.session_state.get("opp_metrics"), st.session_state.get("team_matches"), st.session_state.get("opp_matches"), opp_pdf_insights
-    )
+    if base_dims:
+        adjusted_dims, impact_df, comparison_df = apply_coach_adjustments(base_dims, controls)
+        st.session_state["dims_adjusted"] = adjusted_dims
+        st.session_state["coach_impact_df"] = impact_df
+        st.session_state["coach_dim_comparison"] = comparison_df
+        st.session_state["decision_support"] = build_decision_support(
+            base_dims,
+            adjusted_dims,
+            controls,
+            st.session_state.get("team_metrics"),
+            st.session_state.get("opp_metrics"),
+            st.session_state.get("team_matches"),
+            st.session_state.get("opp_matches"),
+            st.session_state.get("opp_pdf_insights"),
+        )
 
 
 def metric_pm(metrics: Optional[Dict[str, float]], key: str, matches: Optional[int]) -> float:
@@ -2842,8 +2590,6 @@ def build_export_package(
             "risks": parse_bullet_text(risks_text),
             "conclusion": conclusion_text,
             "opponent_display_name": st.session_state.get("opponent_display_name", "-"),
-            "advanced_indices": st.session_state.get("advanced_indices", {}),
-            "opponent_archetype": st.session_state.get("opponent_archetype", ""),
         },
         "page_3_tactical_overview": {
             "opponent_dna": opponent_dna_text,
@@ -3074,19 +2820,9 @@ def run_engine(
     suggested_a, suggested_b, suggested_split = pick_strategy_pair(strategy_scores)
 
     warnings = build_warning_list(opp_players, opp_pdf_insights)
+    three_keys = build_three_keys(dims, opp_pdf_insights, warnings)
+    match_dynamics = build_match_dynamics(opp_pdf_insights, dims, advanced_indices)
     opponent_archetype = classify_opponent_archetype(advanced_indices, opp_metrics, opp_matches)
-    linked = linked_controls_from_model(suggested_a)
-    base_controls = {
-        "primary_model": suggested_a,
-        "secondary_model": suggested_b,
-        "build_up_solution": linked.get("build_up_solution", "vegyes"),
-        "defensive_block": linked.get("defensive_block", "közepes"),
-        "match_scenario": linked.get("match_scenario", "balanced"),
-        "pressing_zone": "közép",
-        "plan_a_emphasis": suggested_split,
-    }
-    three_keys = build_dynamic_three_keys(suggested_a, dims, advanced_indices, warnings, opp_pdf_insights)
-    match_dynamics = build_dynamic_match_dynamics(suggested_a, base_controls, advanced_indices, opponent_archetype, dims, opp_pdf_insights)
     opponent_dna_text = build_opponent_dna_text(opp_pdf_insights, opp_metrics, opp_matches, advanced_indices, opponent_archetype)
 
     return (
@@ -3934,58 +3670,484 @@ def localize_summary_text(text: str) -> str:
 
 def build_quarter_flow(package: Dict[str, object]) -> List[str]:
     p1 = package.get("page_1_onepager", {})
+    p3 = package.get("page_3_tactical_overview", {})
     controls = package.get("coach_controls", {})
     plan_a = p1.get("plan_a", "KIE")
     plan_b = p1.get("plan_b", "BAT")
     split = p1.get("plan_split", "60/40")
+    scenario = localize_summary_text(str(controls.get("match_scenario") or "kiegyensúlyozott")).lower()
     pressing_zone = localize_summary_text(str(controls.get("pressing_zone") or "közép")).lower()
     buildup = localize_summary_text(str(controls.get("build_up_solution") or "vegyes")).lower()
     block = localize_summary_text(str(controls.get("defensive_block") or "közepes")).lower()
-    adv = p1.get("advanced_indices", {}) or {}
-    buvi = float(adv.get("BUVI", 5))
-    tts = float(adv.get("TTS", 5))
-    prs2 = float(adv.get("PRS2", 5))
-    profile = get_strategy_narrative_profile(plan_a)
-    late = "a végjátékban inkább kontroll és területvédekezés maradjon" if tts >= 6.5 else "a végjátékban nagyobb hangsúlyt kaphat a saját ritmus és területi kontroll"
+    dynamics = [localize_summary_text(x) for x in p3.get("match_dynamics", [])]
+
+    first_dyn = dynamics[0] if dynamics else "Az első szakaszban a szerkezeti stabilitás legyen az elsődleges, kinyílás nélkül."
+    second_dyn = dynamics[1] if len(dynamics) > 1 else f"A középső szakaszban a(z) {label_strategy(plan_a)} terv súlypontja domináljon, főleg {pressing_zone} oldali indításokkal."
+    third_dyn = dynamics[2] if len(dynamics) > 2 else f"Labdakihozatalban a(z) {buildup} megoldás és a(z) {block} blokk közti váltás legyen az alap reakció."
+
     return [
-        f"0–15 perc: A kezdésben {profile['start']}; korai kinyílás helyett szerkezeti kontroll kell.",
-        f"16–30 perc: A meccsterv fő iránya a(z) {label_strategy(plan_a)}; a nyomást érdemes {pressing_zone} zónához és triggerhelyzetekhez kötni.",
-        f"31–45 perc: Félidőig a {buildup} build-up és a box előtti kontroll minősége döntheti el, hogy a terv mennyi tiszta helyzetet termel.",
-        f"46–60 perc: Újraindítás után a(z) {block} blokk és a rest defense legyen stabil alap, különösen az ellenfél második hulláma ellen.",
-        f"61–75 perc: {('Továbbra is pressing edge-et kell keresni.' if buvi >= prs2 else 'Szakaszosan kell váltani a nyomás és a kontroll között.')} A váltás a(z) {label_strategy(plan_b)} irányába {split} tervarány mellett marad opció.",
-        f"76–90 perc: {late}; a mérkőzés zárását a(z) {label_strategy(plan_b)} elemeihez igazított döntések stabilizálhatják.",
+        f"0–15 perc: {first_dyn}",
+        f"16–30 perc: A meccsterv fő iránya a(z) {label_strategy(plan_a)}; a nyomást érdemes {pressing_zone} zónához kötni.",
+        f"31–45 perc: A félidő végére fontos a pontrúgások és a tizenhatos előtti kontroll megtartása.",
+        f"46–60 perc: Újraindítás után a(z) {buildup} labdakihozatali terv és a(z) {block} blokk legyen a stabil alap.",
+        f"61–75 perc: A tervsúly továbbra is {split} arányban az A terv felé húz; itt már a váltási trigger dönti el, mikor kell a(z) {label_strategy(plan_b)} elemeket aktiválni.",
+        f"76–90 perc: {third_dyn}",
     ]
 
 
+
 def build_detailed_match_dynamics(package: Dict[str, object]) -> List[str]:
-    p1 = package.get("page_1_onepager", {})
+    p3 = package.get("page_3_tactical_overview", {})
     controls = package.get("coach_controls", {}) or {}
-    plan_a = p1.get("plan_a", "KIE")
     scenario = localize_summary_text(label_scenario(controls.get("match_scenario") or "balanced")).lower()
     zone = localize_summary_text(str(controls.get("pressing_zone") or "közép")).lower()
     buildup = localize_summary_text(str(controls.get("build_up_solution") or "vegyes")).lower()
     block = localize_summary_text(str(controls.get("defensive_block") or "közepes")).lower()
-    adv = p1.get("advanced_indices", {}) or {}
-    buvi = float(adv.get("BUVI", 5))
-    tts = float(adv.get("TTS", 5))
-    prs2 = float(adv.get("PRS2", 5))
-    profile = get_strategy_narrative_profile(plan_a)
+    dyn = [localize_summary_text(x) for x in p3.get("match_dynamics", [])]
 
     bullets = [
-        f"A várható meccskép {scenario}, de a fő identitást a(z) {label_strategy(plan_a)} adja: {profile['start']}.",
-        f"Presszingben a {zone} zóna legyen az elsődleges triggerpont; a cél az ellenfél ritmusának megbontása, nem az állandó kinyílás.",
-        f"Saját labdával a {buildup} build-up legyen az alap, míg labda nélkül a {block} blokk adja a stabil szerkezeti kiindulást.",
+        f"A várható meccskép {scenario}: az elején inkább kontrollált ritmus és középső zónás szerkezet várható, nem folyamatos szétszakadás.",
+        f"Presszingben a {zone} zóna legyen az elsődleges triggerpont; a cél az ellenfél build-up ritmusának megtörése, nem az állandó kinyílás.",
+        f"Saját labdával a {buildup} build-up legyen az alap, de ha az ellenfél magasabban lép ki, gyors oldalváltással vagy direkt továbbjátékkal kell reagálni.",
+        f"Labda nélkül a {block} blokk mellé stabil rest defense szükséges, hogy az ellenfél boxba érkezései és második hullámos futásai ne maradjanak szabadon.",
+        "Ha az ellenfél half-space kombinációkból jut előre, a belső csatornák szűkítése után a szélső terület felé kell terelni a játékot.",
     ]
-    if buvi >= 6.8:
-        bullets.append("Az ellenfél build-upja támadhatóbb, ezért több szakaszban is megéri az első két passzra rámenni és tereléssel labdát nyerni.")
-    elif prs2 >= 6.8:
-        bullets.append("Az ellenfél jobban kijöhet a nyomásból, ezért a presszinget szakaszosan és váltási jelekre építve célszerű használni.")
-    if tts >= 6.8:
-        bullets.append("Az ellenfél átmenetből veszélyes, ezért a rest defense, a második labdák és a box előtti reakciók külön figyelmet kérnek.")
+    for x in dyn[:2]:
+        if x not in bullets:
+            bullets.append(x)
+    return bullets[:6]
+
+
+
+def _ds_seed(*parts) -> str:
+    return "|".join(str(p or "") for p in parts)
+
+
+def _pick_variant(options: List[str], seed: str) -> str:
+    opts = [o for o in options if o]
+    if not opts:
+        return ""
+    idx = abs(hash(seed)) % len(opts)
+    return opts[idx]
+
+
+def _edge_ranking(dims: Dict[str, Dict[str, float]]) -> Tuple[List[Tuple[str, float]], List[Tuple[str, float]]]:
+    ranked = sorted([(k, float(v.get("Edge", 0))) for k, v in (dims or {}).items()], key=lambda x: abs(x[1]), reverse=True)
+    pos = [(k, v) for k, v in ranked if v > 0]
+    neg = [(k, v) for k, v in ranked if v < 0]
+    return pos, neg
+
+
+def _format_dim_list(items: List[Tuple[str, float]], n: int = 3) -> str:
+    rows = [f"{name.lower()} ({val:+.1f})" for name, val in items[:n]]
+    return ", ".join(rows)
+
+
+def _strategy_family(code: str) -> str:
+    return {
+        "KON": "deep_counter",
+        "GAT": "transition",
+        "BAT": "midblock_transition",
+        "KIE": "balanced",
+        "PRS": "press_transition",
+        "MLT": "high_press",
+        "DOM": "dominance",
+        "POZ": "positional",
+        "LAB": "low_control",
+    }.get(code, "balanced")
+
+
+def _strategy_opening(code: str, archetype: str, seed: str) -> str:
+    fam = _strategy_family(code)
+    arche = (archetype or "vegyes profil").lower()
+    bank = {
+        "press_transition": [
+            f"Az alapmeccsterv középpontjába a presszingből indított átmenetek kerüljenek, mert a {arche} ellenfél profilja erre ad leginkább támadható belépési pontot.",
+            f"A legjobb kiindulás egy trigger-alapú presszingterv, amely a {arche} ellenfél ritmusát bontja meg és gyors átmeneti támadásokba fordítja a labdanyeréseket.",
+            f"A matchup alapján a meccset nem folyamatos dominanciával, hanem presszing-triggerből indított átmeneti hullámokkal érdemes kontrollálni a {arche} ellenféllel szemben.",
+        ],
+        "high_press": [
+            f"A meccsterv vállalhat agresszívebb kezdést: a magas letámadás reális eszköz lehet a {arche} ellenfél build-upjának szétszedésére.",
+            f"A fő irány a korai, felülről indított nyomás, mert a {arche} profil ellen a magasan szerzett labdák értéke különösen nagy.",
+            f"A stratégiai előny abból származhat, ha a mérkőzést magas presszingintenzitással nyitod, és nem hagyod a {arche} ellenfélnek felépíteni a ritmust.",
+        ],
+        "midblock_transition": [
+            f"A mérkőzés elsődleges terve kontrollált középső blokkra és az abból indított átmenetekre épüljön; ez a {arche} ellenfél ellen a legstabilabb kiindulás.",
+            f"A matchup inkább strukturált középső blokkot kér, mint folyamatos kinyílást: a {arche} ellenfél ellen a csapdahelyzetekből indított átmenet adja a fő edge-et.",
+            f"A legjobb alap egy fegyelmezett középső blokk, amelyből a labdaszerzések után gyors, célzott átmenetek indulnak a {arche} profil ellen.",
+        ],
+        "dominance": [
+            f"A meccset dominancia-alapú szerkezetbe lehet húzni: a {arche} ellenfél ellen a pozíciós fölény és a területi kontroll jelentheti a fő előnyt.",
+            f"A stratégiai terv domináns labdabirtoklásra és magasabb területi kontrollra épülhet, mert a {arche} profil ellen ez adja a legnagyobb strukturális nyereséget.",
+            f"A kontroll és a területi fölény felvállalható: a {arche} ellenfelet inkább szerkezettel és türelmes dominanciával érdemes szorítani.",
+        ],
+        "positional": [
+            f"A pozíciós támadások és a half-space túlterhelések kerüljenek előtérbe, mert a {arche} ellenfél ellen a strukturált labdás építkezés adhat fölényt.",
+            f"A mérkőzést pozíciós eszközökkel érdemes bontani: a {arche} profil ellen a türelmes területfoglalás és a belső kombinációk lehetnek a kulcsok.",
+            f"A fő terv pozíciós kontrollra épüljön, ahol a half-space jelenlét és a második hullám érkezései bontják meg a {arche} ellenfél blokkját.",
+        ],
+        "transition": [
+            f"A fő támadási út az átmenetek sebessége: a {arche} ellenfél ellen a gyors területnyerés többet érhet, mint a hosszú építkezés.",
+            f"A meccs ritmusát átmeneti akciókkal érdemes megfogni, mert a {arche} profil ellen a gyors vertikális játék kínálja a legnagyobb közvetlen hasznot.",
+            f"A stratégia lényege az, hogy a labdaszerzéseket azonnal vertikális előnybe fordítsd a {arche} ellenféllel szemben.",
+        ],
+        "low_control": [
+            f"A meccset mélyebbről kontrollálva érdemes építeni: a {arche} ellenfél ellen a ritmus lassítása és a labda biztonságos forgatása lehet a fő eszköz.",
+            f"A stabilabb, mélyebb labdatartási terv illeszkedik legjobban ehhez a matchuphoz, mert a {arche} ellenfél ellen a hibátlan első két fázis kiemelt értékű.",
+            f"A mérkőzés olyan szerkezetet kér, ahol a mélyebb kontroll és a türelmes build-up előzi meg a kockázatos vertikalitást.",
+        ],
+        "deep_counter": [
+            f"A meccsterv lényege, hogy szűk szerkezetből, mélyebb blokkból kontrázd a {arche} ellenfelet, és ne engedd neki a nyílt ritmust.",
+            f"A {arche} profil ellen a mélyebb blokk + kontra kombináció stabilabb alap, mint a korai kinyílás.",
+            f"A mérkőzést inkább szűk szerkezettel és célzott kontratámadásokkal érdemes felépíteni a {arche} ellenféllel szemben.",
+        ],
+        "balanced": [
+            f"A matchup nem egyetlen szélsőséges megoldást kér, hanem kiegyensúlyozott tervet, amely a {arche} ellenfélhez igazodva tud váltani kontroll és intenzitás között.",
+            f"A mérkőzés alapja egy kiegyensúlyozott game plan lehet: a {arche} profil ellen a rugalmasság fontosabb, mint a túl korai specializáció.",
+            f"A legjobb kiindulás egy többirányú, kiegyensúlyozott terv, amely a {arche} ellenfél reakcióihoz menet közben tud igazodni.",
+        ],
+    }
+    return _pick_variant(bank.get(fam, bank["balanced"]), seed)
+
+
+def _strategy_plan_b_line(plan_b: str, split: int, indices: Dict[str, float], seed: str) -> str:
+    buvi = float(indices.get("BUVI", 5))
+    tts = float(indices.get("TTS", 5))
+    prs2 = float(indices.get("PRS2", 5))
+    reasons = []
+    if buvi >= 6.5:
+        reasons.append("az ellenfél build-upja presszinggel támadható")
+    if prs2 >= 6.5:
+        reasons.append("a nyomást szakaszosabban kell alkalmazni")
+    if tts >= 6.5:
+        reasons.append("az átmeneti védekezést külön biztosítani kell")
+    reason_text = "; ".join(reasons[:2]) if reasons else "a mérkőzés képe menet közben irányt válthat"
+    return _pick_variant([
+        f"A B tervet a(z) {label_strategy(plan_b)} irányába érdemes előkészíteni; ezt főleg akkor kell elővenni, ha {reason_text}.",
+        f"Tartalék irányként a(z) {label_strategy(plan_b)} maradjon aktív, különösen akkor, ha {reason_text}.",
+        f"A második terv a(z) {label_strategy(plan_b)} legyen, mert ebbe a szerkezetbe lehet átfordítani a meccset, ha {reason_text}.",
+    ], seed + plan_b)
+
+
+def _build_dynamic_keys(plan_a: str, plan_b: str, dims: Dict[str, Dict[str, float]], indices: Dict[str, float], controls: Dict[str, object], opp_players) -> List[str]:
+    pos, neg = _edge_ranking(dims)
+    keys = []
+    if pos:
+        d, val = pos[0]
+        mapping = {
+            "Letámadás": f"A fő aktiváló kulcs a letámadási edge ({val:+.1f}); a labdaszerzéseket nem passzívan, hanem kijelölt triggerpontokra építve kell keresni.",
+            "Labdakihozatal": f"Az egyik fő erőforrás a labdakihozatal stabilitása ({val:+.1f}); az első két passz minősége döntse el, mikor marad rövid az építkezés és mikor válik direktbe.",
+            "Átmenetek": f"Az első számú támadási kulcs az átmeneti előny ({val:+.1f}); a labdaszerzések után kevés érintésből kell területet nyerni.",
+            "Támadó játék": f"A legnagyobb edge a támadó játékban jelenik meg ({val:+.1f}); érdemes több fázisból, tudatos boxeléréssel bontani az ellenfél szerkezetét.",
+            "Pontrúgások": f"A pontrúgás-edge ({val:+.1f}) miatt külön meccsrész-terv kell rögzített helyzetekre, nem csak általános fókusz.",
+            "Labdabirtoklás": f"A labdabirtoklási fölény ({val:+.1f}) alapján a ritmus szabályozása lehet az egyik fő eszköz a mérkőzés menedzselésében.",
+            "Lövésprofil": f"A lövésprofil-oldali fölény ({val:+.1f}) azt jelzi, hogy a helyzetminőség javítása és a boxon belüli döntések kiemelt jelentőségűek.",
+        }
+        keys.append(mapping.get(d, f"A legerősebb dimenziós edge a(z) {d.lower()} ({val:+.1f}), erre kell felépíteni az alapmeccstervet."))
+    if neg:
+        d, val = neg[0]
+        keys.append({
+            "Letámadás": f"Kiemelt védekezési kulcs, hogy az ellenfél presszing- vagy nyomáshelyzeteit ne engedd dominánssá tenni ({val:+.1f}).",
+            "Labdakihozatal": f"A fő óvatossági pont a build-up első fázisa ({val:+.1f}); ehhez előre rögzített kijátszási és második labdás reakció kell.",
+            "Átmenetek": f"Az ellenfél átmeneti potenciálja miatt ({val:+.1f}) a rest defense és a visszarendeződés nem lehet másodlagos.",
+            "Támadó játék": f"Az ellenfél támadójátéka miatt ({val:+.1f}) a box előtti zárásoknak és a passzsáv-védekezésnek kiemelt szerepe van.",
+            "Pontrúgások": f"Az ellenfél pontrúgás-oldali veszélye ({val:+.1f}) külön szervezést kér a first contact és a lecsorgók körül.",
+            "Labdabirtoklás": f"Az ellenfél labdabirtoklási profilja ({val:+.1f}) miatt fontos, hogy ne engedd őket komfortos ritmusba kerülni.",
+            "Lövésprofil": f"A lövésprofil-oldali kitettség ({val:+.1f}) miatt a box előtti kontroll és a blokkolási szituációk döntőek lehetnek.",
+        }.get(d, f"A fő kockázati dimenzió a(z) {d.lower()} ({val:+.1f}); ehhez külön biztosítást kell adni."))
+    buvi = float(indices.get("BUVI", 5))
+    tts = float(indices.get("TTS", 5))
+    prs2 = float(indices.get("PRS2", 5))
+    if buvi >= 6.5:
+        keys.append("A BUVI magas, ezért az ellenfél első két build-up passza triggerpontként kezelhető; érdemes előre kijelölni, mikor lép ki a nyomás.")
+    elif prs2 >= 6.5:
+        keys.append("A presszing-ellenállás magasabb, ezért nem a folyamatos letámadás, hanem a szakaszos, csapdahelyzetre épített nyomás lehet eredményesebb.")
+    elif tts >= 6.5:
+        keys.append("Az ellenfél átmeneti fenyegetése miatt minden támadási szerkezet mögé stabil rest defense és második labdás biztosítás kell.")
     else:
-        bullets.append("Az ellenfél átmeneti fenyegetése mérsékeltebb, ezért nagyobb hangsúly tehető a saját ritmusváltásra és a türelmesebb támadásépítésre.")
-    bullets.append("Meccsszakasz-logika: " + profile['phase_lines'][1] + ".")
+        keys.append("A matchup nem egyetlen szélsőséges kulcsot, hanem szerkezeti fegyelmet és jó ritmusváltást kér a teljes meccsen át.")
+    if opp_players:
+        for group in ["creators", "progressors", "duel_players"]:
+            df = opp_players.get(group)
+            col = get_player_col(df)
+            if df is not None and not df.empty and col:
+                name = str(df.iloc[0][col]).strip()
+                if group == "creators":
+                    keys.append(f"A kulcsjátékos-kezelésben {name} limitálása elsődleges: a belső kombinációk és half-space kapcsolatok zárása ellene külön feladat.")
+                elif group == "progressors":
+                    keys.append(f"{name} progresszióját kell törni; ellene a pressing-triggerek és a visszazárás időzítése különösen fontos.")
+                else:
+                    keys.append(f"A párharc- és second-ball szituációkban {name} környezetét kell kontrollálni, nem csak az első kontaktot.")
+                break
+    return unique_keep_order(keys)[:3]
+
+
+def _build_dynamic_risks(plan_a: str, dims: Dict[str, Dict[str, float]], indices: Dict[str, float], warnings: List[str], opp_players) -> List[str]:
+    pos, neg = _edge_ranking(dims)
+    risks = []
+    if neg:
+        for d, val in neg[:2]:
+            if d == "Átmenetek":
+                risks.append(f"A fő kockázat az ellenfél átmeneti ereje ({val:+.1f}); labdavesztés után az első 5 másodpercet külön kell menedzselni.")
+            elif d == "Labdakihozatal":
+                risks.append(f"A build-up sérülékenysége ({val:+.1f}) miatt a rövid kijátszásoknál előre rögzített menekülő megoldás kell.")
+            elif d == "Pontrúgások":
+                risks.append(f"A pontrúgás-kitettség ({val:+.1f}) miatt külön hangsúly kell az első érintésre és a második hullám követésére.")
+            else:
+                risks.append(f"A(z) {d.lower()} dimenzióban mutatkozó hátrány ({val:+.1f}) miatt ezen a területen nem engedhető el a biztosítás.")
+    if float(indices.get("TTS", 5)) >= 6.5:
+        risks.append("Magas TTS mellett a túl hosszú támadási struktúrák mögött nő a kontrakitettség; a rest defense-t nem lehet alultervezni.")
+    if float(indices.get("PRS2", 5)) >= 6.5:
+        risks.append("Magas PRS2 mellett a túl korai vagy túl széles letámadás könnyen kijátszható, ezért a nyomásnak világos triggerre kell épülnie.")
+    if warnings:
+        risks.extend([w.strip().rstrip('.') + '.' for w in warnings[:2]])
+    return unique_keep_order(risks)[:4]
+
+
+def _build_dynamic_matchup_notes(plan_a: str, archetype: str, dims: Dict[str, Dict[str, float]], indices: Dict[str, float], opp_metrics: Dict[str, float], opp_matches: int) -> List[str]:
+    notes = []
+    buvi = float(indices.get("BUVI", 5))
+    tts = float(indices.get("TTS", 5))
+    prs2 = float(indices.get("PRS2", 5))
+    opp_entries = metric_pm(opp_metrics, "entries_box", opp_matches)
+    opp_shots = metric_pm(opp_metrics, "shots", opp_matches)
+    opp_poss = opp_metrics.get("possession_pct", 0)
+    if opp_poss <= 1:
+        opp_poss *= 100
+    notes.append(f"Az ellenfél archetípusa: {archetype}; ez a matchup nem általános sablont, hanem kifejezetten {label_strategy(plan_a)} irányú alapmeccstervet indokol.")
+    if buvi >= 6.5:
+        notes.append(f"A build-up sebezhetőségi index magas (BUVI {buvi:.1f}), ezért a labdakihozataluk első két passza támadható triggerpontként kezelhető.")
+    else:
+        notes.append(f"A build-up sebezhetőségi index nem extrém (BUVI {buvi:.1f}), ezért a nyomást inkább zónához és ritmusváltáshoz kell kötni, nem állandó kilépéshez.")
+    if prs2 >= 6.5:
+        notes.append(f"A presszing-ellenállás magasabb (PRS2 {prs2:.1f}), ezért a túl nyílt magas presszing helyett csapdahelyzetekből kell irányítani a nyomást.")
+    else:
+        notes.append(f"A presszing-ellenállás alacsonyabb (PRS2 {prs2:.1f}), így bátrabban lehet nyomást generálni a build-up első szakaszában.")
+    if tts >= 6.5 or opp_entries >= 15 or opp_shots >= 10:
+        notes.append(f"Az átmeneti fenyegetés érdemi (TTS {tts:.1f}), ezért a rest defense és a box előtti kontroll kiemelt fontosságú.")
+    else:
+        notes.append(f"Az átmeneti fenyegetés közepes/alacsonyabb (TTS {tts:.1f}), így nagyobb teret lehet adni a proaktív labdás tervnek.")
+    return unique_keep_order(notes)[:4]
+
+
+def _build_dynamic_match_dynamics(plan_a: str, plan_b: str, dims: Dict[str, Dict[str, float]], indices: Dict[str, float], controls: Dict[str, object], archetype: str) -> List[str]:
+    buvi = float(indices.get("BUVI", 5))
+    tts = float(indices.get("TTS", 5))
+    prs2 = float(indices.get("PRS2", 5))
+    scenario = localize_summary_text(label_scenario(controls.get("match_scenario") or "balanced")).lower()
+    zone = localize_summary_text(str(controls.get("pressing_zone") or "közép")).lower()
+    buildup = localize_summary_text(str(controls.get("build_up_solution") or "vegyes")).lower()
+    block = localize_summary_text(str(controls.get("defensive_block") or "közepes")).lower()
+    fam = _strategy_family(plan_a)
+    bullets = []
+    if fam in {"press_transition", "high_press"}:
+        bullets.append(f"A mérkőzés elején a nyomás ritmusa határozza meg a képet: a presszinget elsősorban {zone} zónából, trigger-alapon kell indítani, nem folyamatos kinyílással.")
+    elif fam in {"midblock_transition", "deep_counter"}:
+        bullets.append(f"A meccskép várhatóan kontrolláltabb és türelmesebb lesz: a {block} blokk stabilitása után kell kivárni az átmeneti vagy kontrás ablakokat.")
+    elif fam in {"dominance", "positional", "low_control"}:
+        bullets.append(f"A labdás kontroll várhatóan nagyobb szerepet kap; a {buildup} build-up és a területi pozicionálás ritmusa lesz a fő meghatározó.")
+    else:
+        bullets.append(f"A meccs alapritmusa {scenario}; a váltásokat nem a folyamatos intenzitás, hanem a jól időzített szerkezeti döntések adják majd.")
+    if buvi >= 6.5:
+        bullets.append("Az ellenfél build-upja több ponton támadható, ezért az első passzok körül érdemes előre kijelölt pressing-triggereket használni.")
+    if prs2 >= 6.5:
+        bullets.append("Mivel az ellenfél jobban kijöhet a nyomásból, a presszinget inkább szakaszosan és csapdahelyzetekből kell alkalmazni.")
+    if tts >= 6.5:
+        bullets.append("Az átmeneti fenyegetés miatt minden támadási hullám mögé stabil rest defense-t és második labdás biztosítást kell szervezni.")
+    if fam in {"dominance", "positional"}:
+        bullets.append("Ha az ellenfél mélyebbre zár, a half-space jelenlét és a második hullám érkezései dönthetik el a támadási minőséget.")
+    if fam in {"transition", "press_transition", "midblock_transition"}:
+        bullets.append("Labdaszerzés után az első előrepassz és a futásidőzítés fontosabb lesz, mint a hosszú előkészítés; ebből jöhet a meccs legjobb edge-e.")
+    bullets.append(f"A várható alapforgatókönyv {scenario}; a Plan B ({label_strategy(plan_b)}) akkor aktiválódjon, ha a jelenlegi ritmus nem hoz területi vagy pressing-előnyt.")
     return unique_keep_order(bullets)[:6]
+
+
+def _build_dynamic_quarter_flow(plan_a: str, plan_b: str, dims: Dict[str, Dict[str, float]], indices: Dict[str, float], controls: Dict[str, object], archetype: str, split: str) -> List[str]:
+    fam = _strategy_family(plan_a)
+    zone = localize_summary_text(str(controls.get("pressing_zone") or "közép")).lower()
+    buildup = localize_summary_text(str(controls.get("build_up_solution") or "vegyes")).lower()
+    block = localize_summary_text(str(controls.get("defensive_block") or "közepes")).lower()
+    tts = float(indices.get("TTS", 5))
+    buvi = float(indices.get("BUVI", 5))
+    lines = []
+    if fam == "press_transition":
+        lines.append(f"0-15 perc: A kezdő szakaszban trigger-alapú presszinggel, főleg {zone} zónából kell bontani az ellenfél build-upját.")
+        lines.append("16-30 perc: A labdaszerzések után azonnali átmeneti támadásokból kell meccsedge-et építeni.")
+    elif fam == "midblock_transition":
+        lines.append(f"0-15 perc: A nyitó szakaszban a {block} blokk stabilitása legyen elsődleges, nem a korai kinyílás.")
+        lines.append("16-30 perc: A középső blokk csapdahelyzeteiből kell átmeneti támadásokat generálni.")
+    elif fam == "dominance":
+        lines.append(f"0-15 perc: A meccset labdás kontrollal és területi fölénnyel kell megnyitni, {buildup} építkezéssel.")
+        lines.append("16-30 perc: A pozíciós támadások ritmusát kell emelni, különösen a half-space zónákban.")
+    elif fam == "high_press":
+        lines.append(f"0-15 perc: Az első szakaszban magas presszinggel kell rámenni az ellenfél első passzaira, főleg {zone} oldali irányítással.")
+        lines.append("16-30 perc: A felül szerzett labdákból gyors befejezések és rövid támadási hullámok legyenek a prioritások.")
+    else:
+        lines.append("0-15 perc: A kezdés legyen szerkezetileg kontrollált; az első periódus célja az ellenfél ritmusának és preferált sávjainak beolvasása.")
+        lines.append(f"16-30 perc: A fő terv súlypontja fokozatosan a(z) {label_strategy(plan_a)} felé tolódjon, a pressinget {zone} triggerhez kötve.")
+    lines.append("31-45 perc: A félidő vége felé a box előtti kontroll és a rögzített helyzetek kezelése legyen elsődleges, hogy a meccs ne csússzon át kaotikus szakaszba.")
+    if buvi >= 6.5:
+        lines.append(f"46-60 perc: Az újrakezdés után újra rá kell menni az ellenfél build-upjára; a {buildup} saját labdás tervből gyorsan kell tudni pressing-üzemmódba váltani.")
+    else:
+        lines.append(f"46-60 perc: A második félidő elején a {buildup} labdakihozatal és a {block} blokk stabilitása adja a biztonságos kiinduló szerkezetet.")
+    lines.append(f"61-75 perc: A meccsterv továbbra is {split} arányban az A tervhez húz; a B terv ({label_strategy(plan_b)}) aktiválása legyen a fő edzői döntési pont.")
+    if tts >= 6.5:
+        lines.append("76-90 perc: A végjátékban nő a második labdák és az átmeneti szituációk értéke, ezért a rest defense és a visszarendeződés maradjon szigorú.")
+    else:
+        lines.append("76-90 perc: A záró szakaszban a ritmusmenedzsment és a megfelelő területi döntések fontosabbak lehetnek, mint az állandó intenzitás.")
+    return lines[:6]
+
+
+def build_decision_support(base_dims, adjusted_dims, controls, team_metrics, opp_metrics, team_matches, opp_matches, opp_pdf_insights):
+    base_dims = base_dims or {}
+    adjusted_dims = adjusted_dims or base_dims or {}
+    controls = controls or {}
+    indices = st.session_state.get("advanced_indices", {}) or {}
+    archetype = st.session_state.get("opponent_archetype", "vegyes profil")
+    opp_players = st.session_state.get("opp_players")
+    warnings = st.session_state.get("warnings", []) or []
+
+    plan_a = controls.get("primary_model") or controls.get("suggested_plan_a") or st.session_state.get("selected_plan_a", "KIE")
+    plan_b = controls.get("secondary_model") or controls.get("suggested_plan_b") or st.session_state.get("selected_plan_b", "BAT")
+    split_val = int(controls.get("plan_a_emphasis", controls.get("suggested_split", st.session_state.get("selected_split", 60))))
+    split_txt = f"{split_val}/{100-split_val}"
+
+    baseline = baseline_coach_controls(
+        controls.get("suggested_plan_a", plan_a),
+        controls.get("suggested_plan_b", plan_b),
+        int(controls.get("suggested_split", split_val)),
+    )
+    has_manual = has_meaningful_coach_intervention(controls, baseline)
+
+    pos, neg = _edge_ranking(adjusted_dims)
+    top_changes = [f"{k} ({v:+.1f})" for k, v in pos[:2] + neg[:1]]
+
+    matchup_notes = _build_dynamic_matchup_notes(plan_a, archetype, adjusted_dims, indices, opp_metrics or {}, opp_matches or 1)
+    keys = _build_dynamic_keys(plan_a, plan_b, adjusted_dims, indices, controls, opp_players)
+    risks = _build_dynamic_risks(plan_a, adjusted_dims, indices, warnings, opp_players)
+    match_dynamics = _build_dynamic_match_dynamics(plan_a, plan_b, adjusted_dims, indices, controls, archetype)
+    quarter_flow = _build_dynamic_quarter_flow(plan_a, plan_b, adjusted_dims, indices, controls, archetype, split_txt)
+
+    conclusion_bullets = []
+    conclusion_bullets.append(_strategy_opening(plan_a, archetype, _ds_seed(plan_a, plan_b, archetype, split_txt)))
+    conclusion_bullets.append(_strategy_plan_b_line(plan_b, split_val, indices, _ds_seed(plan_b, archetype, split_txt)))
+    if pos:
+        conclusion_bullets.append(f"A meccsterv fő statisztikai támasza a(z) {_format_dim_list(pos, 3)} előny, ezért az alapstruktúrát ezekre a dimenziókra kell felépíteni.")
+    if neg:
+        conclusion_bullets.append(f"A fő óvatossági pont a(z) {_format_dim_list(neg, 2)} terület; ezekre a dimenziókra külön biztosítást kell adni a mérkőzés során.")
+    if float(indices.get("BUVI", 5)) >= 6.5:
+        conclusion_bullets.append(f"A magas BUVI ({indices.get('BUVI', 0):.1f}) alapján az ellenfél build-upja nem kezelhető semleges fázisként; ebből tudatosan nyomást és labdanyerést kell generálni.")
+    if float(indices.get("TTS", 5)) >= 6.5:
+        conclusion_bullets.append(f"A TTS ({indices.get('TTS', 0):.1f}) miatt a támadási terv csak akkor működik, ha mögötte a rest defense és a második labdás reakció is stabil marad.")
+    if float(indices.get("PRS2", 5)) >= 6.5:
+        conclusion_bullets.append(f"A PRS2 ({indices.get('PRS2', 0):.1f}) arra utal, hogy az ellenfél jobban ellenállhat a nyomásnak, ezért a presszinget inkább váltási triggerre, mint folyamatos rohanásra kell építeni.")
+    if opp_players:
+        danger = summarize_danger_players({k: v for k, v in opp_players.items()})
+        if danger:
+            conclusion_bullets.append(f"A kulcsjátékos-kezelésben külön fókusz kell: {', '.join([d.split(' – ')[0] for d in danger[:3]])}.")
+
+    executive_summary = ""
+    if has_manual:
+        executive_summary = (
+            f"Az edzői finomhangolás az alap matchup-profilhoz képest főleg ezeket a dimenziókat mozdítja: {', '.join(top_changes) if top_changes else 'nincs jelentős eltolás'}. "
+            f"Ez a gyakorlatban azt jelenti, hogy a terv a(z) {label_strategy(plan_a)} felé húz, miközben tartalék opcióként a(z) {label_strategy(plan_b)} marad aktív."
+        )
+
+    recommendation = []
+    recommendation.extend(matchup_notes[:2])
+    recommendation.extend(keys[:1])
+
+    cards = []
+    for title, choice, gains, costs, fit, dims_ in [
+        ("Elsődleges terv", label_strategy(plan_a), keys[:2], risks[:2], matchup_notes[0] if matchup_notes else "", [k for k, _ in pos[:3]]),
+        ("Tartalék terv", label_strategy(plan_b), match_dynamics[:2], risks[:2], matchup_notes[1] if len(matchup_notes) > 1 else "", [k for k, _ in neg[:2]]),
+    ]:
+        cards.append({"title": title, "choice": choice, "gains": gains, "costs": costs, "fit": fit, "dims": dims_})
+
+    return {
+        "has_manual_intervention": has_manual,
+        "executive_summary": executive_summary,
+        "matchup_notes": matchup_notes,
+        "recommendation": unique_keep_order(recommendation)[:4],
+        "cards": cards,
+        "top_dimension_changes": top_changes,
+        "narrative_conclusion": unique_keep_order(conclusion_bullets)[:6],
+        "narrative_keys": keys,
+        "narrative_risks": risks,
+        "narrative_match_dynamics": match_dynamics,
+        "quarter_flow": quarter_flow,
+        "archetype": archetype,
+        "indices": indices,
+    }
+
+
+def sync_coach_texts_from_controls():
+    controls = get_current_coach_controls()
+    st.session_state["selected_plan_a"] = controls["primary_model"]
+    st.session_state["selected_plan_b"] = controls["secondary_model"]
+    st.session_state["selected_split"] = int(controls["plan_a_emphasis"])
+    base_dims = st.session_state.get("dims")
+    if base_dims:
+        adjusted_dims, impact_df, comparison_df = apply_coach_adjustments(base_dims, controls)
+        st.session_state["dims_adjusted"] = adjusted_dims
+        st.session_state["coach_impact_df"] = impact_df
+        st.session_state["coach_dim_comparison"] = comparison_df
+        ds = build_decision_support(
+            base_dims,
+            adjusted_dims,
+            controls,
+            st.session_state.get("team_metrics"),
+            st.session_state.get("opp_metrics"),
+            st.session_state.get("team_matches"),
+            st.session_state.get("opp_matches"),
+            st.session_state.get("opp_pdf_insights"),
+        )
+        st.session_state["decision_support"] = ds
+        st.session_state["three_keys_text"] = "\n".join([f"- {x}" for x in ds.get("narrative_keys", [])])
+        st.session_state["risks_text"] = "\n".join([f"- {x}" for x in ds.get("narrative_risks", [])])
+        st.session_state["match_dynamics_text"] = "\n".join([f"- {x}" for x in ds.get("narrative_match_dynamics", [])])
+        st.session_state["conclusion_text"] = "\n".join([f"- {x}" for x in ds.get("narrative_conclusion", [])])
+    else:
+        summary = build_coach_summary(controls)
+        for k, v in summary.items():
+            st.session_state[k] = v
+
+
+def build_full_conclusion(package: Dict[str, object]) -> List[str]:
+    ds = package.get("decision_support", {}) or {}
+    lines = ds.get("narrative_conclusion") or []
+    if lines:
+        return [localize_summary_text(x) for x in lines]
+    return [localize_summary_text(x) for x in parse_bullet_text(package.get("page_1_onepager", {}).get("conclusion", ""))]
+
+
+def get_full_conclusion_text(package: Dict[str, object]) -> str:
+    return " \n".join([f"- {x}" for x in build_full_conclusion(package)])
+
+
+def build_quarter_flow(package: Dict[str, object]) -> List[str]:
+    ds = package.get("decision_support", {}) or {}
+    if ds.get("quarter_flow"):
+        return [localize_summary_text(x) for x in ds.get("quarter_flow", [])]
+    return []
+
+
+def build_detailed_match_dynamics(package: Dict[str, object]) -> List[str]:
+    ds = package.get("decision_support", {}) or {}
+    if ds.get("narrative_match_dynamics"):
+        return [localize_summary_text(x) for x in ds.get("narrative_match_dynamics", [])]
+    p3 = package.get("page_3_tactical_overview", {})
+    return [localize_summary_text(x) for x in p3.get("match_dynamics", [])]
+
+
+def get_methodology_summary() -> str:
+    return (
+        "Ez a briefing egy adatalapú taktikai döntéselőkészítő rendszerből készül, amely a match Excel, a player Excel és a célzott PDF-scouting inputok alapján épít pontos matchup-profilt. "
+        "A modell 7 alapdimenzióban és 3 matchup-indexben vizsgálja a két csapat viszonyát, majd ezt egy 9 stratégiás palettára vetíti rá. "
+        "A végső Plan A / Plan B javaslat nem egyetlen sablonból születik, hanem a dimenzió-edge-ek, az ellenfél archetípusa, a BUVI, a TTS, a PRS2, valamint a kulcsjátékos-profilok együttes olvasatából. "
+        "A szöveges konklúzió, a 3 kulcs, a kockázatok és a meccsdinamika ezért ellenfélenként külön narratívát kapnak. "
+        "Az eredmény egy gyorsan értelmezhető, de nem sablonos edzői döntéstámogató összkép."
+    )
 
 
 # =========================================================
