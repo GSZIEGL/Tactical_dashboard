@@ -3111,19 +3111,22 @@ h1,h2,h3,h4,p,li,span,label,div { color:#18212F; }
 .summary-page-title { margin:0 0 .35rem 0 !important; }
 .viz-page { break-inside: avoid; page-break-inside: avoid; }
 .viz-unit { break-inside: avoid; page-break-inside: avoid; }
-.viz-unit-radar .summary-chartbox { min-height: 510px; }
-.viz-unit-bar .summary-chartbox { min-height: 455px; }
-.viz-unit-map .summary-chartbox { min-height: 500px; }
+.viz-unit-radar .summary-chartbox { min-height: 560px; }
+.viz-unit-bar .summary-chartbox { min-height: 520px; }
+.viz-unit-map .summary-chartbox { min-height: 560px; }
 .summary-unit { break-inside: avoid; page-break-inside: avoid; margin-bottom: .4rem; }
 .summary-unit h4, .summary-unit h5, .summary-unit h3 { margin-bottom:.15rem !important; page-break-after: avoid; break-after: avoid; }
-.summary-chartbox { margin-top:0 !important; margin-bottom:0 !important; }
-.summary-viz-single { break-inside: avoid; page-break-inside: avoid; }
-.summary-viz-single h4, .summary-viz-single h5, .summary-viz-single p { margin:0 0 .2rem 0 !important; }
+.summary-chartbox { margin-top:0 !important; margin-bottom:4px !important; }
 .summary-chartbox h4, .summary-chartbox h5 { margin-bottom:0 !important; }
 .summary-chartbox iframe { margin-top:-6px !important; margin-bottom:-8px !important; }
 .summary-chartbox.radar-box iframe { margin-top:-22px !important; margin-bottom:-10px !important; }
 .summary-chartbox.bar-box iframe { margin-top:-4px !important; margin-bottom:-6px !important; }
 .summary-chartbox.map-box iframe { margin-top:-20px !important; margin-bottom:-10px !important; }
+.summary-chartbox svg { width:100% !important; height:auto !important; display:block; }
+.summary-chartbox .svg-wrap { width:100%; overflow:hidden; }
+.summary-chartbox.radar-box .svg-wrap { margin-top:-8px; }
+.summary-chartbox.bar-box .svg-wrap { margin-top:-4px; }
+.summary-chartbox.map-box .svg-wrap { margin-top:-8px; }
 .summary-compact-list { margin:0; padding-left:1rem; }
 .summary-compact-list li { margin:0 0 .18rem 0; line-height:1.22; }
 .summary-method { font-size:.92rem; line-height:1.35; color:#273142; margin-top:4px; }
@@ -3142,9 +3145,10 @@ h1,h2,h3,h4,p,li,span,label,div { color:#18212F; }
   .summary-page-break { break-before: page; page-break-before: always; }
   .summary-avoid-break, .summary-block, .summary-chartbox, .summary-viz-page, .summary-unit, .summary-section-wrap { break-inside: avoid; page-break-inside: avoid; }
   .summary-chartbox iframe { margin-top:-8px !important; margin-bottom:-12px !important; }
-  .viz-unit-radar .summary-chartbox { min-height: 490px !important; }
-  .viz-unit-bar .summary-chartbox { min-height: 440px !important; }
-  .viz-unit-map .summary-chartbox { min-height: 480px !important; }
+  .summary-chartbox svg { width:100% !important; height:auto !important; display:block; }
+  .viz-unit-radar .summary-chartbox { min-height: 540px !important; }
+  .viz-unit-bar .summary-chartbox { min-height: 500px !important; }
+  .viz-unit-map .summary-chartbox { min-height: 540px !important; }
   h1, h2, h3, h4, h5 { break-after: avoid; page-break-after: avoid; }
 }
 </style>
@@ -3841,15 +3845,15 @@ def render_summary_page(package: Dict[str, object]):
         st.markdown(html_bullets(merged, empty_text="Nincs elérhető gyors összegző lista."), unsafe_allow_html=True)
 
     # Vizualizációk külön, rendezett nyomtatási oldalakra bontva
-    radar_png = get_radar_png_bytes(dims)
-    bar_png = get_bar_chart_png_bytes(dims)
-    map_png = get_strategy_map_png_bytes(p1.get("plan_a"), p1.get("plan_b"))
+    radar_svg = get_radar_svg(dims, compact=True)
+    bar_svg = get_bar_chart_svg(dims)
+    map_svg = get_strategy_map_svg(p1.get("plan_a"), p1.get("plan_b"))
 
-    st.markdown("<div class='summary-page-break summary-viz-single summary-section-tight summary-section-wrap viz-page'><h4 class='summary-page-title'>📊 Vizualizációk</h4><div class='summary-unit viz-unit viz-unit-radar'><h5>7 dimenziós profil</h5><div class='summary-chartbox radar-box'>" + (png_bytes_to_base64_img_tag(radar_png, "7 dimenziós profil", width_style="100%") if radar_png else "<div class='summary-note'>A diagram ebben a környezetben nem renderelhető.</div>") + "</div></div></div>", unsafe_allow_html=True)
+    st.markdown("<div class='summary-page-break summary-viz-page summary-section-tight summary-section-wrap viz-page'><h4 class='summary-page-title'>📊 Vizualizációk</h4><div class='summary-unit viz-unit viz-unit-radar'><h5>7 dimenziós profil</h5><div class='summary-chartbox radar-box'><div class='svg-wrap'>" + radar_svg + "</div></div></div></div>", unsafe_allow_html=True)
 
-    st.markdown("<div class='summary-page-break summary-viz-single summary-section-tight summary-section-wrap viz-page'><div class='summary-unit viz-unit viz-unit-bar'><h5>📊 Dimenziók összehasonlítása</h5><div class='summary-chartbox bar-box'>" + (png_bytes_to_base64_img_tag(bar_png, "Dimenziók összehasonlítása", width_style="100%") if bar_png else "<div class='summary-note'>A diagram ebben a környezetben nem renderelhető.</div>") + "</div></div></div>", unsafe_allow_html=True)
+    st.markdown("<div class='summary-page-break summary-section-tight summary-section-wrap viz-page'><div class='summary-unit viz-unit viz-unit-bar'><h5>📊 Dimenziók összehasonlítása</h5><div class='summary-chartbox bar-box'><div class='svg-wrap'>" + bar_svg + "</div></div></div></div>", unsafe_allow_html=True)
 
-    st.markdown("<div class='summary-page-break summary-viz-single summary-section-tight summary-section-wrap viz-page'><div class='summary-unit viz-unit viz-unit-map'><h5>🧭 9 stratégia térképe</h5><div class='summary-note' style='margin-bottom:.25rem;'>A térkép a két csapat profilja alapján javasolt játékmodelleket mutatja a blokkmagasság és a játékstílus tengelyén.</div><div class='summary-chartbox map-box'>" + (png_bytes_to_base64_img_tag(map_png, "9 stratégia térképe", width_style="100%") if map_png else "<div class='summary-note'>A diagram ebben a környezetben nem renderelhető.</div>") + "</div></div></div>", unsafe_allow_html=True)
+    st.markdown("<div class='summary-page-break summary-section-tight summary-section-wrap viz-page'><div class='summary-unit viz-unit viz-unit-map'><h5>🧭 9 stratégia térképe</h5><div class='summary-note' style='margin-bottom:.35rem;'>A térkép a két csapat profilja alapján javasolt játékmodelleket mutatja a blokkmagasság és a játékstílus tengelyén.</div><div class='summary-chartbox map-box'><div class='svg-wrap'>" + map_svg + "</div></div></div></div>", unsafe_allow_html=True)
 
     st.markdown("<div class='summary-page-break summary-section-tight summary-section-wrap'>", unsafe_allow_html=True)
     info_left, info_right = st.columns([1.02, 0.98], gap="medium")
