@@ -7,12 +7,6 @@ import base64
 from pathlib import Path
 from typing import Dict, Optional, List, Tuple
 
-PIL_AVAILABLE = True
-try:
-    from PIL import Image as PILImage, ImageDraw, ImageFont
-except Exception:
-    PIL_AVAILABLE = False
-
 import altair as alt
 import pandas as pd
 import pdfplumber
@@ -1916,173 +1910,6 @@ def build_reportlab_chart_flowable(svg_string: str, max_width_pts: float, max_he
     return None
 
 
-def _pil_font(size: int, bold: bool = False):
-    candidates = [
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/dejavu/DejaVuSans.ttf",
-    ]
-    if not PIL_AVAILABLE:
-        return None
-    for c in candidates:
-        try:
-            if Path(c).exists():
-                return ImageFont.truetype(c, size=size)
-        except Exception:
-            pass
-    try:
-        return ImageFont.load_default()
-    except Exception:
-        return None
-
-
-def _pil_text(draw, xy, text, fill, font, anchor=None):
-    try:
-        draw.text(xy, text, fill=fill, font=font, anchor=anchor)
-    except TypeError:
-        draw.text(xy, text, fill=fill, font=font)
-
-
-def _pil_chart_image(width: int, height: int, title: str):
-    img = PILImage.new("RGB", (width, height), "#FBF8FE")
-    draw = ImageDraw.Draw(img)
-    draw.rounded_rectangle((14, 14, width-14, height-14), radius=22, fill="white", outline="#E6DFF2", width=2)
-    title_font = _pil_font(30, True)
-    body_font = _pil_font(18, False)
-    _pil_text(draw, (36, 40), title, "#2F1D4A", title_font)
-    return img, draw, body_font
-
-
-def _pil_to_png_bytes(img) -> Optional[bytes]:
-    try:
-        buf = io.BytesIO()
-        img.save(buf, format="PNG")
-        return buf.getvalue()
-    except Exception:
-        return None
-
-
-def _fallback_radar_png_bytes(dims: Dict[str, Dict[str, float]]) -> Optional[bytes]:
-    if not PIL_AVAILABLE or not dims:
-        return None
-    labels = list(dims.keys())
-    kte = [float(dims[k]["KTE"]) for k in labels]
-    ell = [float(dims[k]["ELL"]) for k in labels]
-    w, h = 1250, 860
-    img, draw, body_font = _pil_chart_image(w, h, "7 dimenziós profil")
-    cx, cy = 450, 460
-    max_r = 255
-    n = len(labels)
-    for ring in [2, 4, 6, 8, 10]:
-        pts = []
-        for i in range(n):
-            a = -math.pi/2 + (2*math.pi*i/n)
-            r = max_r * ring / 10.0
-            pts.append((cx + r*math.cos(a), cy + r*math.sin(a)))
-        draw.polygon(pts, outline="#D7D1E3")
-    for i, label in enumerate(labels):
-        a = -math.pi/2 + (2*math.pi*i/n)
-        x = cx + max_r*1.12*math.cos(a)
-        y = cy + max_r*1.12*math.sin(a)
-        draw.line((cx, cy, cx + max_r*math.cos(a), cy + max_r*math.sin(a)), fill="#E5E0EE", width=1)
-        _pil_text(draw, (x, y), label, "#4A3868", _pil_font(20, True), anchor="mm")
-    def poly(vals):
-        pts=[]
-        for i, v in enumerate(vals):
-            a = -math.pi/2 + (2*math.pi*i/n)
-            r = max_r * max(0,min(10,v))/10.0
-            pts.append((cx + r*math.cos(a), cy + r*math.sin(a)))
-        return pts
-    p_ell = poly(ell)
-    p_kte = poly(kte)
-    draw.polygon(p_ell, fill="#C7B8DD55", outline="#9D8ABA")
-    draw.polygon(p_kte, fill="#5B2C8333", outline="#5B2C83", width=4)
-    for x,y in p_kte:
-        draw.ellipse((x-5,y-5,x+5,y+5), fill="#5B2C83")
-    for x,y in p_ell:
-        draw.ellipse((x-4,y-4,x+4,y+4), fill="#9D8ABA")
-    lx, ly = 905, 170
-    draw.rounded_rectangle((lx, ly, lx+250, ly+112), radius=16, fill="#F7F4FB", outline="#D7D1E3")
-    draw.ellipse((lx+20, ly+24, lx+38, ly+42), fill="#5B2C83")
-    _pil_text(draw, (lx+52, ly+33), "KTE", "#2F1D4A", _pil_font(20, True))
-    draw.ellipse((lx+20, ly+64, lx+38, ly+82), fill="#9D8ABA")
-    _pil_text(draw, (lx+52, ly+73), "ELL", "#2F1D4A", _pil_font(20, True))
-    _pil_text(draw, (lx+20, ly+98), "Skála: 1–10", "#7C7091", _pil_font(16, False))
-    return _pil_to_png_bytes(img)
-
-
-def _fallback_bar_chart_png_bytes(dims: Dict[str, Dict[str, float]]) -> Optional[bytes]:
-    if not PIL_AVAILABLE or not dims:
-        return None
-    labels = list(dims.keys())
-    kte = [float(dims[k]["KTE"]) for k in labels]
-    ell = [float(dims[k]["ELL"]) for k in labels]
-    w, h = 1450, 840
-    img, draw, body_font = _pil_chart_image(w, h, "Dimenziók összehasonlítása")
-    left, top, right, bottom = 110, 130, w-120, h-140
-    draw.rounded_rectangle((left, top, right, bottom), radius=8, fill="#08111E")
-    for yv in range(0, 11, 2):
-        y = bottom - (bottom-top-40) * yv / 10.0
-        draw.line((left+40, y, right-30, y), fill="#263142", width=1)
-        _pil_text(draw, (left+18, y), str(yv), "#E4EAF5", _pil_font(18), anchor="mm")
-    n = len(labels)
-    group_w = (right-left-90)/max(1,n)
-    bar_w = group_w*0.28
-    for i, label in enumerate(labels):
-        gx = left+60 + i*group_w + group_w/2
-        x1 = gx - bar_w - 8
-        x2 = gx + 8
-        h1 = (bottom-top-40) * ell[i] / 10.0
-        h2 = (bottom-top-40) * kte[i] / 10.0
-        draw.rectangle((x1, bottom-h1, x1+bar_w, bottom), fill="#B7D4F2")
-        draw.rectangle((x2, bottom-h2, x2+bar_w, bottom), fill="#3D6CC8")
-        _pil_text(draw, (gx, bottom+58), label, "#E4EAF5", _pil_font(20), anchor="mm")
-    _pil_text(draw, (right-40, top+20), "Csapat", "#E4EAF5", _pil_font(24, True), anchor="ra")
-    draw.rectangle((right-110, top+50, right-92, top+68), fill="#B7D4F2")
-    _pil_text(draw, (right-84, top+59), "ELL", "#E4EAF5", _pil_font(22, True))
-    draw.rectangle((right-110, top+84, right-92, top+102), fill="#3D6CC8")
-    _pil_text(draw, (right-84, top+93), "KTE", "#E4EAF5", _pil_font(22, True))
-    return _pil_to_png_bytes(img)
-
-
-def _fallback_strategy_map_png_bytes(selected_a: Optional[str] = None, selected_b: Optional[str] = None) -> Optional[bytes]:
-    if not PIL_AVAILABLE:
-        return None
-    rows = strategy_scatter_data(selected_a, selected_b)
-    w, h = 1450, 820
-    img, draw, body_font = _pil_chart_image(w, h, "9 stratégia térképe")
-    left, top, right, bottom = 90, 135, w-70, h-125
-    draw.rounded_rectangle((left, top, right, bottom), radius=8, fill="#08111E")
-    xs = [1,2,3,4,5,6]; ys=[1,2,3,4,5]
-    def xmap(v): return left+70 + (right-left-150)*(v-1)/5.0
-    def ymap(v): return bottom-40 - (bottom-top-90)*(v-1)/4.0
-    for xv in xs:
-        x = xmap(xv)
-        draw.line((x, top+30, x, bottom-40), fill="#263142", width=1)
-    for yv in ys:
-        y = ymap(yv)
-        draw.line((left+70, y, right-60, y), fill="#263142", width=1)
-    for xv, lbl in zip(xs, ["Direkt","D/P","Vegyes","Kiegy.","Kontroll","Agresszív"]):
-        _pil_text(draw, (xmap(xv), bottom+10), lbl, "#E4EAF5", _pil_font(18), anchor="mm")
-    for yv, lbl in zip(ys, ["Mély","Alacsony-közép","Közép","Közép-magas","Magas"]):
-        _pil_text(draw, (left+22, ymap(yv)), lbl, "#E4EAF5", _pil_font(18), anchor="mm")
-    _pil_text(draw, ((left+right)//2, bottom+45), "Játékstílus: direkt → kontroll", "#C7B8DD", _pil_font(18), anchor="mm")
-    _pil_text(draw, (35, (top+bottom)//2), "Blokkmagasság: mély → magas", "#C7B8DD", _pil_font(18), anchor="mm")
-    color_map = {"Paletta":"#5B2C83","Plan A":"#E0A500","Plan B":"#2AA7A1"}
-    for row in rows:
-        x, y = xmap(row['x']), ymap(row['y'])
-        r = 22 if row['marker_type']!='Paletta' else 18
-        fill = color_map.get(row['marker_type'], '#5B2C83')
-        draw.ellipse((x-r, y-r, x+r, y+r), fill=fill, outline="#F2EDF9")
-        _pil_text(draw, (x, y), row['code'], "white", _pil_font(18, True), anchor="mm")
-    legend_x = right-110; legend_y = top+40
-    _pil_text(draw, (legend_x, legend_y), "Jelölés", "#E4EAF5", _pil_font(22, True))
-    for idx,(name,col) in enumerate([("Paletta","#5B2C83"),("Plan A","#E0A500"),("Plan B","#2AA7A1")]):
-        yy = legend_y+38+idx*34
-        draw.ellipse((legend_x, yy, legend_x+16, yy+16), fill=col)
-        _pil_text(draw, (legend_x+24, yy+8), name, "#E4EAF5", _pil_font(18), anchor="lm")
-    return _pil_to_png_bytes(img)
-
-
 def png_bytes_to_base64_img_tag(png: Optional[bytes], alt_text: str, width_style: str = "100%") -> str:
     if png:
         b64 = base64.b64encode(png).decode("ascii")
@@ -2106,7 +1933,7 @@ def fig_to_png_bytes(fig) -> Optional[bytes]:
 
 def get_radar_png_bytes(dims: Dict[str, Dict[str, float]]) -> Optional[bytes]:
     if not MATPLOTLIB_AVAILABLE:
-        return _fallback_radar_png_bytes(dims)
+        return svg_to_png_bytes(get_radar_svg(dims), 1800)
     labels = list(dims.keys())
     kte = [dims[k]["KTE"] for k in labels]
     ell = [dims[k]["ELL"] for k in labels]
@@ -2132,13 +1959,12 @@ def get_radar_png_bytes(dims: Dict[str, Dict[str, float]]) -> Optional[bytes]:
     ax.legend(["KTE", "ELL"], loc="upper right", bbox_to_anchor=(1.18, 1.12), frameon=False)
     fig.suptitle("7 dimenziós radar", fontsize=15, fontweight="bold", color="#2F1D4A")
     fig.tight_layout()
-    out = fig_to_png_bytes(fig)
-    return out or _fallback_radar_png_bytes(dims)
+    return fig_to_png_bytes(fig)
 
 
 def get_bar_chart_png_bytes(dims: Dict[str, Dict[str, float]]) -> Optional[bytes]:
     if not MATPLOTLIB_AVAILABLE:
-        return _fallback_bar_chart_png_bytes(dims)
+        return svg_to_png_bytes(get_bar_chart_svg(dims), 1800)
     labels = list(dims.keys())
     kte = [dims[k]["KTE"] for k in labels]
     ell = [dims[k]["ELL"] for k in labels]
@@ -2155,13 +1981,12 @@ def get_bar_chart_png_bytes(dims: Dict[str, Dict[str, float]]) -> Optional[bytes
     ax.legend(frameon=False)
     ax.set_title("Dimenzió-összehasonlítás", fontsize=15, fontweight="bold", color="#2F1D4A")
     fig.tight_layout()
-    out = fig_to_png_bytes(fig)
-    return out or _fallback_bar_chart_png_bytes(dims)
+    return fig_to_png_bytes(fig)
 
 
 def get_strategy_map_png_bytes(selected_a: Optional[str] = None, selected_b: Optional[str] = None) -> Optional[bytes]:
     if not MATPLOTLIB_AVAILABLE:
-        return _fallback_strategy_map_png_bytes(selected_a, selected_b)
+        return svg_to_png_bytes(get_strategy_map_svg(selected_a, selected_b), 1800)
     rows = strategy_scatter_data(selected_a, selected_b)
     fig, ax = plt.subplots(figsize=(9.2, 5.2), facecolor="#FBF8FE")
     ax.set_facecolor("white")
@@ -2182,8 +2007,7 @@ def get_strategy_map_png_bytes(selected_a: Optional[str] = None, selected_b: Opt
     ax.text(3.5, 5.72, "Blokkmagasság: mély → magas", ha="center", va="bottom", fontsize=9, color="#5C4A7A")
     ax.text(3.5, 0.22, "Játékstílus: direkt → kontroll", ha="center", va="top", fontsize=9, color="#5C4A7A")
     fig.tight_layout()
-    out = fig_to_png_bytes(fig)
-    return out or _fallback_strategy_map_png_bytes(selected_a, selected_b)
+    return fig_to_png_bytes(fig)
 
 
 def build_reportlab_png_flowable(png_bytes: Optional[bytes], max_width_pts: float, max_height_pts: Optional[float] = None):
@@ -3287,19 +3111,14 @@ h1,h2,h3,h4,p,li,span,label,div { color:#18212F; }
 .summary-page-title { margin:0 0 .35rem 0 !important; }
 .viz-page { break-inside: avoid; page-break-inside: avoid; }
 .viz-unit { break-inside: avoid; page-break-inside: avoid; }
-.viz-grid-page { break-inside: avoid; page-break-inside: avoid; display:grid; grid-template-rows:auto auto 1fr; gap:8px; min-height: calc(100vh - 96px); align-content:start; }
-.viz-grid-title { margin:0 !important; font-size:1.08rem; font-weight:700; color:#18212F; }
-.viz-grid-note { margin:0; color:#5B6474; font-size:.92rem; line-height:1.28; }
-.viz-grid-body { break-inside: avoid; page-break-inside: avoid; display:flex; align-items:flex-start; justify-content:center; }
-.viz-grid-body img { display:block; width:100%; height:auto; object-fit:contain; }
-.viz-grid-radar img { max-width: 980px; }
-.viz-grid-bar img, .viz-grid-map img { max-width: 1400px; }
-.viz-unit-radar .summary-chartbox { min-height: 560px; }
-.viz-unit-bar .summary-chartbox { min-height: 520px; }
-.viz-unit-map .summary-chartbox { min-height: 560px; }
+.viz-unit-radar .summary-chartbox { min-height: 510px; }
+.viz-unit-bar .summary-chartbox { min-height: 455px; }
+.viz-unit-map .summary-chartbox { min-height: 500px; }
 .summary-unit { break-inside: avoid; page-break-inside: avoid; margin-bottom: .4rem; }
 .summary-unit h4, .summary-unit h5, .summary-unit h3 { margin-bottom:.15rem !important; page-break-after: avoid; break-after: avoid; }
-.summary-chartbox { margin-top:0 !important; margin-bottom:4px !important; }
+.summary-chartbox { margin-top:0 !important; margin-bottom:0 !important; }
+.summary-viz-single { break-inside: avoid; page-break-inside: avoid; }
+.summary-viz-single h4, .summary-viz-single h5, .summary-viz-single p { margin:0 0 .2rem 0 !important; }
 .summary-chartbox h4, .summary-chartbox h5 { margin-bottom:0 !important; }
 .summary-chartbox iframe { margin-top:-6px !important; margin-bottom:-8px !important; }
 .summary-chartbox.radar-box iframe { margin-top:-22px !important; margin-bottom:-10px !important; }
@@ -3323,11 +3142,9 @@ h1,h2,h3,h4,p,li,span,label,div { color:#18212F; }
   .summary-page-break { break-before: page; page-break-before: always; }
   .summary-avoid-break, .summary-block, .summary-chartbox, .summary-viz-page, .summary-unit, .summary-section-wrap { break-inside: avoid; page-break-inside: avoid; }
   .summary-chartbox iframe { margin-top:-8px !important; margin-bottom:-12px !important; }
-  .viz-unit-radar .summary-chartbox { min-height: 540px !important; }
-  .viz-unit-bar .summary-chartbox { min-height: 500px !important; }
-  .viz-unit-map .summary-chartbox { min-height: 540px !important; }
-  .viz-grid-page { min-height: calc(100vh - 70px) !important; break-inside: avoid; page-break-inside: avoid; }
-  .viz-grid-body { break-inside: avoid; page-break-inside: avoid; }
+  .viz-unit-radar .summary-chartbox { min-height: 490px !important; }
+  .viz-unit-bar .summary-chartbox { min-height: 440px !important; }
+  .viz-unit-map .summary-chartbox { min-height: 480px !important; }
   h1, h2, h3, h4, h5 { break-after: avoid; page-break-after: avoid; }
 }
 </style>
@@ -4023,28 +3840,16 @@ def render_summary_page(package: Dict[str, object]):
         merged += [f"Ellenfél: {item}" for item in danger[:2]]
         st.markdown(html_bullets(merged, empty_text="Nincs elérhető gyors összegző lista."), unsafe_allow_html=True)
 
-    # Vizualizációk külön, fix két-rácsos oldalakra bontva
+    # Vizualizációk külön, rendezett nyomtatási oldalakra bontva
     radar_png = get_radar_png_bytes(dims)
     bar_png = get_bar_chart_png_bytes(dims)
     map_png = get_strategy_map_png_bytes(p1.get("plan_a"), p1.get("plan_b"))
 
-    def viz_page_html(title: str, img_bytes: Optional[bytes], note: str = "", extra_class: str = "") -> str:
-        note_html = f"<div class='viz-grid-note'>{pdf_safe_text(localize_summary_text(note))}</div>" if note else ""
-        if img_bytes:
-            img_html = png_bytes_to_base64_img_tag(img_bytes, title, width_style="100%")
-        else:
-            img_html = f"<div class='summary-note'>A diagram ebben a környezetben nem renderelhető.</div>"
-        return (
-            f"<div class='summary-page-break summary-section-tight summary-section-wrap viz-page viz-grid-page {extra_class}'>"
-            f"<div class='viz-grid-title'>{pdf_safe_text(localize_summary_text(title))}</div>"
-            f"{note_html}"
-            f"<div class='viz-grid-body'>{img_html}</div>"
-            f"</div>"
-        )
+    st.markdown("<div class='summary-page-break summary-viz-single summary-section-tight summary-section-wrap viz-page'><h4 class='summary-page-title'>📊 Vizualizációk</h4><div class='summary-unit viz-unit viz-unit-radar'><h5>7 dimenziós profil</h5><div class='summary-chartbox radar-box'>" + (png_bytes_to_base64_img_tag(radar_png, "7 dimenziós profil", width_style="100%") if radar_png else "<div class='summary-note'>A diagram ebben a környezetben nem renderelhető.</div>") + "</div></div></div>", unsafe_allow_html=True)
 
-    st.markdown(viz_page_html("📊 Vizualizációk – 7 dimenziós profil", radar_png, extra_class="viz-grid-radar"), unsafe_allow_html=True)
-    st.markdown(viz_page_html("📊 Dimenziók összehasonlítása", bar_png, extra_class="viz-grid-bar"), unsafe_allow_html=True)
-    st.markdown(viz_page_html("🧭 9 stratégia térképe", map_png, "A térkép a két csapat profilja alapján javasolt játékmodelleket mutatja a blokkmagasság és a játékstílus tengelyén.", "viz-grid-map"), unsafe_allow_html=True)
+    st.markdown("<div class='summary-page-break summary-viz-single summary-section-tight summary-section-wrap viz-page'><div class='summary-unit viz-unit viz-unit-bar'><h5>📊 Dimenziók összehasonlítása</h5><div class='summary-chartbox bar-box'>" + (png_bytes_to_base64_img_tag(bar_png, "Dimenziók összehasonlítása", width_style="100%") if bar_png else "<div class='summary-note'>A diagram ebben a környezetben nem renderelhető.</div>") + "</div></div></div>", unsafe_allow_html=True)
+
+    st.markdown("<div class='summary-page-break summary-viz-single summary-section-tight summary-section-wrap viz-page'><div class='summary-unit viz-unit viz-unit-map'><h5>🧭 9 stratégia térképe</h5><div class='summary-note' style='margin-bottom:.25rem;'>A térkép a két csapat profilja alapján javasolt játékmodelleket mutatja a blokkmagasság és a játékstílus tengelyén.</div><div class='summary-chartbox map-box'>" + (png_bytes_to_base64_img_tag(map_png, "9 stratégia térképe", width_style="100%") if map_png else "<div class='summary-note'>A diagram ebben a környezetben nem renderelhető.</div>") + "</div></div></div>", unsafe_allow_html=True)
 
     st.markdown("<div class='summary-page-break summary-section-tight summary-section-wrap'>", unsafe_allow_html=True)
     info_left, info_right = st.columns([1.02, 0.98], gap="medium")
