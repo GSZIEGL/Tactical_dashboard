@@ -4,6 +4,7 @@ import math
 import re
 import unicodedata
 import base64
+import hashlib
 from pathlib import Path
 from typing import Dict, Optional, List, Tuple
 
@@ -2829,17 +2830,6 @@ def run_engine(
             "Edge": round(team_scores[k] - opp_scores[k], 1),
         }
 
-    edge_transition = team_scores["Átmenetek"] - opp_scores["Lövésprofil"]
-    edge_control = team_scores["Labdakihozatal"] + team_scores["Labdabirtoklás"] - opp_scores["Letámadás"]
-    edge_attack = team_scores["Támadó játék"] + team_scores["Pontrúgások"] - opp_scores["Labdabirtoklás"]
-
-    if edge_transition >= max(edge_control, edge_attack):
-        suggested_a, suggested_b, suggested_split = "GAT", "BAT", 60
-    elif edge_control >= max(edge_transition, edge_attack):
-        suggested_a, suggested_b, suggested_split = "KIE", "POZ", 55
-    else:
-        suggested_a, suggested_b, suggested_split = "PRS", "MLT", 55
-
     team_players = parse_player_excel(team_player_file.getvalue()) if team_player_file else None
     opp_players = parse_player_excel(opp_player_file.getvalue()) if opp_player_file else None
 
@@ -2848,6 +2838,9 @@ def run_engine(
 
     team_pdf_insights = build_pdf_insights(team_pdf_text) if team_pdf_text.strip() else None
     opp_pdf_insights = build_pdf_insights(opp_pdf_text) if opp_pdf_text.strip() else None
+
+    matchup_indices = compute_matchup_indices(team_metrics, opp_metrics, team_matches, opp_matches, opp_players=opp_players, team_players=team_players)
+    suggested_a, suggested_b, suggested_split = suggest_plans_from_model(team_scores, opp_scores, matchup_indices, opp_pdf_insights)
 
     warnings = build_warning_list(opp_players, opp_pdf_insights)
     three_keys = build_three_keys(dims, opp_pdf_insights, warnings)
@@ -2880,6 +2873,87 @@ def run_engine(
         opp_pdf_pages,
         opponent_dna_text,
     )
+
+
+def _safe_group_top_mean(players_dict, group: str, cols: List[str]) -> float:
+    if not players_dict or group not in players_dict:
+        return 0.0
+    df = players_dict.get(group)
+    if df is None or getattr(df, "empty", True):
+        return 0.0
+    vals = []
+    for col in cols:
+        if col in df.columns:
+            vals.extend(pd.to_numeric(df[col], errors="coerce").dropna().head(3).tolist())
+    if not vals:
+        return 0.0
+    return float(sum(vals) / len(vals))
+
+
+def compute_matchup_indices(team_metrics: Dict[str, float], opp_metrics: Dict[str, float], team_matches: int, opp_matches: int, opp_players=None, team_players=None) -> Dict[str, float]:
+    team_matches = max(team_matches or 1, 1)
+    opp_matches = max(opp_matches or 1, 1)
+    opp_pass = opp_metrics.get("passes_accurate_pct", 0)
+    team_press = team_metrics.get("pressing_success_pct", 0)
+    opp_poss = opp_metrics.get("possession_pct", 0)
+    if opp_pass <= 1:
+        opp_pass *= 100
+    if team_press <= 1:
+        team_press *= 100
+    if opp_poss <= 1:
+        opp_poss *= 100
+
+    opp_entries_pm = opp_metrics.get("entries_box", 0) / opp_matches
+    opp_keypasses_pm = opp_metrics.get("key_passes", 0) / opp_matches
+    opp_shots_pm = opp_metrics.get("shots", 0) / opp_matches
+    team_entries_pm = team_metrics.get("entries_box", 0) / team_matches
+    team_keypasses_pm = team_metrics.get("key_passes", 0) / team_matches
+
+    opp_prog = _safe_group_top_mean(opp_players, "progressors", ["progressive_passes"])
+    opp_build = _safe_group_top_mean(opp_players, "build_up", ["passes"])
+    opp_create = _safe_group_top_mean(opp_players, "creators", ["key_passes"])
+    team_press_bonus = max(0.0, (team_press - 45) / 10.0)
+
+    buvi = clamp(10 - ((opp_pass - 58) / 4.8) + team_press_bonus + max(0.0, (opp_metrics.get("ppda", 0) - 1.5) * 0.8), 1, 10)
+    tts = clamp(1 + 0.23 * opp_entries_pm + 0.55 * opp_keypasses_pm + 0.28 * opp_shots_pm + 0.04 * opp_create, 1, 10)
+    prs2 = clamp(1 + 0.10 * opp_pass + 0.06 * opp_poss + 0.05 * opp_prog + 0.0025 * opp_build, 1, 10)
+    kte_attack_index = clamp(1 + 0.26 * team_entries_pm + 0.65 * team_keypasses_pm, 1, 10)
+    return {"BUVI": round(buvi, 1), "TTS": round(tts, 1), "PRS2": round(prs2, 1), "KTE_ATTACK": round(kte_attack_index, 1)}
+
+
+def suggest_plans_from_model(team_scores: Dict[str, float], opp_scores: Dict[str, float], idx: Dict[str, float], opp_pdf_insights=None) -> Tuple[str, str, int]:
+    edge_press = team_scores["Letámadás"] - opp_scores["Labdakihozatal"]
+    edge_trans = team_scores["Átmenetek"] - max(opp_scores["Letámadás"], opp_scores["Labdabirtoklás"])
+    edge_control = (team_scores["Labdakihozatal"] + team_scores["Labdabirtoklás"]) - (opp_scores["Letámadás"] + opp_scores["Átmenetek"]) / 2
+    edge_attack = (team_scores["Támadó játék"] + team_scores["Pontrúgások"]) - (opp_scores["Pontrúgások"] + opp_scores["Lövésprofil"]) / 2
+
+    score_map = {
+        "PRS": 0.9*edge_press + 0.7*edge_trans + 0.45*idx["BUVI"] - 0.35*idx["PRS2"],
+        "MLT": 1.1*edge_press + 0.8*idx["BUVI"] - 0.55*idx["PRS2"],
+        "BAT": 0.8*edge_trans + 0.5*edge_press + 0.35*idx["TTS"] + 0.2*edge_attack,
+        "DOM": 0.95*edge_control + 0.45*edge_attack - 0.35*idx["TTS"] + 0.1*idx["PRS2"],
+        "POZ": 0.85*edge_control + 0.55*edge_attack + 0.15*idx["PRS2"],
+        "KIE": 0.55*edge_control + 0.55*edge_trans + 0.15*edge_press,
+        "LAB": 0.65*edge_control - 0.25*idx["TTS"] - 0.2*edge_press,
+        "GAT": 0.95*edge_trans + 0.35*idx["BUVI"] + 0.1*edge_press,
+        "KON": 0.55*idx["TTS"] - 0.4*edge_control + 0.35*edge_trans,
+    }
+
+    if opp_pdf_insights and opp_pdf_insights.get("formation"):
+        f = opp_pdf_insights.get("formation", "")
+        if f.startswith("3-"):
+            score_map["PRS"] += 0.2
+            score_map["BAT"] += 0.2
+        if f.startswith("4-2-3"):
+            score_map["DOM"] += 0.15
+            score_map["POZ"] += 0.15
+
+    ordered = sorted(score_map.items(), key=lambda x: x[1], reverse=True)
+    plan_a = ordered[0][0]
+    plan_b = next(code for code, _ in ordered[1:] if code != plan_a)
+    gap = ordered[0][1] - ordered[1][1]
+    split = 60 if gap >= 1.25 else 57 if gap >= 0.65 else 55
+    return plan_a, plan_b, split
 
 
 # =========================================================
@@ -3093,7 +3167,7 @@ RUNTIME_RESET_KEYS = [
     "team_pdf_pages", "opp_pdf_pages", "opponent_dna_text", "opponent_profile_text",
     "own_state_text", "three_keys_text", "risks_text", "match_dynamics_text",
     "conclusion_text", "dims_adjusted", "coach_impact_df", "coach_dim_comparison",
-    "decision_support", "excel_import_error"
+    "decision_support", "excel_import_error", "active_engine_signature"
 ]
 
 def reset_runtime_state(full_reset: bool = True):
@@ -3246,10 +3320,12 @@ if step == "1. Input":
                 parts.append("none")
             else:
                 try:
-                    size = len(f.getvalue())
+                    data = f.getvalue()
                 except Exception:
-                    size = 0
-                parts.append(f"{getattr(f, 'name', 'uploaded')}::{size}")
+                    data = b""
+                digest = hashlib.md5(data).hexdigest()[:12] if data else "empty"
+                parts.append(f"{getattr(f, 'name', 'uploaded')}::{len(data)}::{digest}")
+        parts.append(f"oppname::{st.session_state.get('opponent_name','').strip()}")
         return "|".join(parts)
 
     current_input_signature = _uploaded_signature(
@@ -3325,6 +3401,7 @@ if step == "1. Input":
         st.session_state["team_pdf_pages"] = team_pdf_pages
         st.session_state["opp_pdf_pages"] = opp_pdf_pages
         st.session_state["opponent_dna_text"] = opponent_dna_text
+        st.session_state["active_engine_signature"] = current_input_signature
 
         # export-ready structured defaults
         possession_opp = (opp_metrics.get("possession_pct", 0) * 100) if opp_metrics.get("possession_pct", 0) <= 1 else opp_metrics.get("possession_pct", 0)
