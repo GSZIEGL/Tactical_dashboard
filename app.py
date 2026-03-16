@@ -14,6 +14,14 @@ import pdfplumber
 import streamlit as st
 import streamlit.components.v1 as components
 
+DOCX_AVAILABLE = True
+try:
+    from docx import Document
+    from docx.shared import Inches, Pt
+    from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
+except Exception:
+    DOCX_AVAILABLE = False
+
 MATPLOTLIB_AVAILABLE = True
 try:
     import matplotlib
@@ -2593,6 +2601,101 @@ def build_pdf_export_bytes(package: Dict[str, object]) -> bytes:
     return pdf
 
 
+
+
+def build_word_export_bytes(package: Dict[str, object]) -> bytes:
+    if not DOCX_AVAILABLE:
+        return build_markdown_export(package).encode("utf-8")
+
+    p1 = package["page_1_onepager"]
+    p3 = package["page_3_tactical_overview"]
+    ds = package.get("decision_support", {}) or {}
+    danger = summarize_danger_players(p3.get("key_player_threats", {}))
+    quarter_flow = build_quarter_flow(package)
+
+    doc = Document()
+    section = doc.sections[0]
+    section.top_margin = Inches(0.45)
+    section.bottom_margin = Inches(0.45)
+    section.left_margin = Inches(0.55)
+    section.right_margin = Inches(0.55)
+
+    title = doc.add_paragraph()
+    title.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+    run = title.add_run("Taktikai döntéselőkészítő")
+    run.bold = True
+    run.font.size = Pt(22)
+
+    subtitle = doc.add_paragraph()
+    subtitle.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+    subtitle.add_run(f"KTE vs {p1.get('opponent_name') or 'ellenfél'}\nKészítette: Sziegl Gábor")
+
+    doc.add_heading("Vezetői összegző", level=1)
+    for row in [
+        f"A terv: {label_strategy(str(p1['plan_a']))}",
+        f"B terv: {label_strategy(str(p1['plan_b']))}",
+        f"Arány: {p1['plan_split']}",
+    ]:
+        doc.add_paragraph(row, style='List Bullet')
+
+    doc.add_heading("Teljes konklúzió", level=1)
+    for item in build_full_conclusion(package):
+        doc.add_paragraph(localize_summary_text(item), style='List Bullet')
+
+    doc.add_heading("3 kulcs és kockázatok", level=1)
+    for item in p1.get('three_keys', [])[:3]:
+        doc.add_paragraph(f"Kulcs: {localize_summary_text(item)}", style='List Bullet')
+    for item in p1.get('risks', [])[:3]:
+        doc.add_paragraph(f"Kockázat: {localize_summary_text(item)}", style='List Bullet')
+    for item in danger[:2]:
+        doc.add_paragraph(f"Ellenfél: {localize_summary_text(item)}", style='List Bullet')
+
+    doc.add_page_break()
+    doc.add_heading("7 dimenziós profil", level=1)
+    radar = get_radar_png_bytes(p1['dimensions'])
+    if radar:
+        doc.add_picture(io.BytesIO(radar), width=Inches(6.6))
+
+    doc.add_heading("Dimenziók összehasonlítása", level=1)
+    bar = get_bar_chart_png_bytes(p1['dimensions'])
+    if bar:
+        doc.add_picture(io.BytesIO(bar), width=Inches(6.6))
+
+    doc.add_heading("9 stratégia térképe", level=1)
+    strat = get_strategy_map_png_bytes(p1.get('plan_a'), p1.get('plan_b'))
+    if strat:
+        doc.add_picture(io.BytesIO(strat), width=Inches(6.6))
+
+    doc.add_page_break()
+    doc.add_heading("Matchup-olvasat", level=1)
+    for item in ds.get('matchup_notes', [])[:4]:
+        doc.add_paragraph(localize_summary_text(item), style='List Bullet')
+
+    doc.add_heading("Miért ezt a taktikát?", level=1)
+    why_lines = ds.get('recommendation', [])
+    if not why_lines:
+        why_lines = [localize_summary_text(x) for x in build_full_conclusion(package)[:3]]
+    for item in why_lines[:5]:
+        doc.add_paragraph(localize_summary_text(item), style='List Bullet')
+
+    doc.add_heading("Várható meccsdinamika", level=1)
+    for item in build_detailed_match_dynamics(package)[:6]:
+        doc.add_paragraph(localize_summary_text(item), style='List Bullet')
+
+    doc.add_heading("Negyedórás várható lefolyás", level=1)
+    for item in quarter_flow[:6]:
+        doc.add_paragraph(localize_summary_text(item), style='List Bullet')
+
+    doc.add_page_break()
+    doc.add_heading("Módszertan röviden", level=1)
+    doc.add_paragraph(localize_summary_text(get_methodology_summary()))
+
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
 def build_export_package(
     selected_plan_a: str,
     selected_plan_b: str,
@@ -4111,19 +4214,19 @@ def render_summary_page(package: Dict[str, object]):
     # Vizualizációk külön, rendezett nyomtatási oldalakra bontva
     st.markdown("<div class='summary-page-break summary-viz-page summary-section-tight summary-section-wrap viz-page'>", unsafe_allow_html=True)
     st.markdown("<div class='summary-chart-block summary-unit viz-unit viz-unit-radar'><div class='summary-chartbox radar-box'>", unsafe_allow_html=True)
-    render_radar_svg(dims, height=440, compact=True)
+    render_radar_svg(dims, height=560, compact=True)
     st.markdown("</div></div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("<div class='summary-page-break summary-section-tight summary-section-wrap viz-page'>", unsafe_allow_html=True)
     st.markdown("<div class='summary-chart-block summary-unit viz-unit viz-unit-bar'><div class='summary-chartbox bar-box'>", unsafe_allow_html=True)
-    render_bar_chart(dims, height=320)
+    render_bar_chart(dims, height=420)
     st.markdown("</div></div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("<div class='summary-page-break summary-section-tight summary-section-wrap viz-page'>", unsafe_allow_html=True)
     st.markdown("<div class='summary-chart-block summary-unit viz-unit viz-unit-map'><div class='summary-chartbox map-box'>", unsafe_allow_html=True)
-    render_strategy_map(p1.get("plan_a"), p1.get("plan_b"), height=360)
+    render_strategy_map(p1.get("plan_a"), p1.get("plan_b"), height=460)
     st.markdown("</div></div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -4233,6 +4336,8 @@ if step == "4. Export Prep":
         st.header("Export Prep – template előkészítés")
         if not REPORTLAB_AVAILABLE:
             st.warning("A reportlab nincs telepítve, ezért a PDF gomb szöveges fallback fájlt ad vissza. A teljes, diagramokat is tartalmazó export ilyenkor a HTML fájlban látszik.")
+        if not DOCX_AVAILABLE:
+            st.warning("A python-docx nincs telepítve, ezért a Word gomb szöveges fallback fájlt ad vissza.")
 
         coach_controls = {
             "primary_model": st.session_state["coach_primary_model"],
@@ -4271,6 +4376,7 @@ if step == "4. Export Prep":
         json_export = json.dumps(package, ensure_ascii=False, indent=2)
         pdf_export = build_pdf_export_bytes(package)
         html_export = build_html_export(package)
+        word_export = build_word_export_bytes(package)
 
         st.subheader("Jelenlegi végtermék preview")
         preview_tab, md_tab, json_tab = st.tabs(["Deck preview", "Markdown", "JSON / letöltések"])
@@ -4308,6 +4414,12 @@ if step == "4. Export Prep":
                     data=md_export.encode("utf-8"),
                     file_name="briefing_export_package.md",
                     mime="text/markdown",
+                )
+                st.download_button(
+                    "Word briefing letöltése",
+                    data=word_export,
+                    file_name="briefing_export_package.docx" if DOCX_AVAILABLE else "briefing_export_package.txt",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document" if DOCX_AVAILABLE else "text/plain",
                 )
             with dl2:
                 st.markdown("#### Control státusz")
