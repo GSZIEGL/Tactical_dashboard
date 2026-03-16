@@ -1492,7 +1492,7 @@ def render_methodology_block():
     with st.expander("Metodika / hogyan dolgozik az app", expanded=False):
         st.markdown(
             """
-Ez az alkalmazás **adatalapú taktikai döntéselőkészítő**, amely a match Excel, player Excel és célzott PDF-scouting inputokból épít egységes **matchup-profilt**. A modell a két csapatot **10 tényező mentén** hasonlítja össze: a 7 alapdimenzió mellett külön kezeli a **build-up sebezhetőséget (BUVI)**, az **átmeneti fenyegetést (TTS)** és a **press resistance-et (PRS2)**. Ezt a képet illeszti rá a **9 alapstratégiára**: **KON** kontra mély blokkból, **GAT** gyors átmenet, **BAT** középső blokk + átmenet, **KIE** kiegyensúlyozott játék, **PRS** presszing + átmenet, **MLT** magas letámadás, **DOM** dominancia, **POZ** pozíciós támadás, **LAB** mélyebb labdatartás. A javaslat tehát nem tipp, hanem több adatforrásból épített matchup-vizsgálat, amelyben **MI-alapú strukturálás** és a saját szakmai finomhangolásod egyszerre jelenik meg. A narratíva sem fix sablon: a rendszer több száz, gyakorlatban ezer feletti szövegkombinációból állít össze ellenfélspecifikus briefinget. Az edzői beavatkozás után a rendszer végig következetesen újrasúlyozza a képet, így az export már a módosított döntési logikát mutatja.
+Ez az alkalmazás **adatalapú taktikai döntéselőkészítő**, amely a match Excel, player Excel és célzott PDF-scouting inputokból épít egységes **matchup-profilt**. A modell a két csapatot **10 tényező mentén** hasonlítja össze: a 7 alapdimenzió mellett külön kezeli a **build-up sebezhetőséget (BUVI)**, az **átmeneti fenyegetést (TTS)** és a **press resistance-et (PRS2)**. Ezt a képet illeszti rá a **9 alapstratégiára**: **KON** kontra mély blokkból, **GAT** gyors átmenet, **BAT** középső blokk + átmenet, **KIE** kiegyensúlyozott játék, **PRS** presszing + átmenet, **MLT** magas letámadás, **DOM** dominancia, **POZ** pozíciós támadás, **LAB** mélyebb labdatartás. A javaslat tehát nem tipp, hanem több adatforrásból épített matchup-vizsgálat, amelyben **MI-alapú strukturálás** és a saját szakmai finomhangolásod egyszerre jelenik meg. A narratíva sem fix sablon: a rendszer több száz szövegfragmentumból és kontextusfüggő logikai ágból építkezik, amelyek együtt több ezer lehetséges briefingváltozatot adnak. Az edzői beavatkozás után a rendszer végig következetesen újrasúlyozza a képet, így az export már a módosított döntési logikát mutatja.
             """
         )
 
@@ -1503,7 +1503,7 @@ def get_methodology_summary() -> str:
         "A modell 10 tényező mentén hasonlítja össze a két csapatot: letámadás, labdakihozatal, átmenetek, támadó játék, pontrúgások, labdabirtoklás, lövésprofil, build-up sebezhetőség (BUVI), átmeneti fenyegetés (TTS) és press resistance (PRS2). "
         "Ezt a képet 9 alapstratégiára vetítjük: KON kontra mély blokkból, GAT gyors átmenet, BAT középső blokk + átmenet, KIE kiegyensúlyozott, PRS presszing + átmenet, MLT magas letámadás, DOM dominancia, POZ pozíciós támadás és LAB mélyebb labdatartás. "
         "A Plan A és Plan B ezért nem megérzésből születik, hanem statisztikai matchup-vizsgálatból, MI-alapú strukturálásból és szakmai modellezésből. "
-        "A narratíva sem fix sablon: a rendszer több száz, gyakorlatban ezer feletti szövegkombinációból rak össze ellenfélspecifikus briefinget. "
+        "A narratíva sem fix sablon: a rendszer több száz szövegfragmentumból és kontextusfüggő logikai ágból építkezik, amelyek együtt több ezer lehetséges briefingváltozatot adnak. "
         "Az eredmény egy gyorsan értelmezhető, edzői döntést támogató összkép."
     )
 
@@ -3109,6 +3109,9 @@ h1,h2,h3,h4,p,li,span,label,div { color:#18212F; }
 .summary-avoid-break, .summary-block, .summary-chartbox, .summary-viz-page { break-inside: avoid; page-break-inside: avoid; }
 .summary-viz-page { margin-top:0; padding-top:0; }
 .summary-page-title { margin:0 0 .35rem 0 !important; }
+.viz-page { break-inside: avoid; page-break-inside: avoid; }
+.viz-unit { break-inside: avoid; page-break-inside: avoid; }
+.viz-unit-radar .summary-chartbox, .viz-unit-bar .summary-chartbox, .viz-unit-map .summary-chartbox { min-height: 620px; }
 .summary-unit { break-inside: avoid; page-break-inside: avoid; margin-bottom: .4rem; }
 .summary-unit h4, .summary-unit h5, .summary-unit h3 { margin-bottom:.15rem !important; page-break-after: avoid; break-after: avoid; }
 .summary-chartbox { margin-top:0 !important; margin-bottom:4px !important; }
@@ -3830,16 +3833,25 @@ def render_summary_page(package: Dict[str, object]):
         merged += [f"Ellenfél: {item}" for item in danger[:2]]
         st.markdown(html_bullets(merged, empty_text="Nincs elérhető gyors összegző lista."), unsafe_allow_html=True)
 
-    st.markdown("<div class='summary-page-break summary-viz-page summary-section-tight summary-section-wrap'>", unsafe_allow_html=True)
+    # Vizualizációk külön, rendezett nyomtatási oldalakra bontva
+    st.markdown("<div class='summary-page-break summary-viz-page summary-section-tight summary-section-wrap viz-page'>", unsafe_allow_html=True)
     st.markdown("<h4 class='summary-page-title'>📊 Vizualizációk</h4>", unsafe_allow_html=True)
-    st.markdown("<div class='summary-unit'><h5>7 dimenziós profil</h5><div class='summary-chartbox radar-box'>", unsafe_allow_html=True)
-    render_radar_svg(dims, height=520, compact=True)
+    st.markdown("<div class='summary-unit viz-unit viz-unit-radar'><h5>7 dimenziós profil</h5><div class='summary-chartbox radar-box'>", unsafe_allow_html=True)
+    render_radar_svg(dims, height=560, compact=True)
     st.markdown("</div></div>", unsafe_allow_html=True)
-    st.markdown("<div class='summary-unit'><h5>Dimenziók összehasonlítása</h5><div class='summary-chartbox bar-box'>", unsafe_allow_html=True)
-    render_bar_chart(dims, height=500)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("<div class='summary-page-break summary-section-tight summary-section-wrap viz-page'>", unsafe_allow_html=True)
+    st.markdown("<h4 class='summary-page-title'>📊 Vizualizációk</h4>", unsafe_allow_html=True)
+    st.markdown("<div class='summary-unit viz-unit viz-unit-bar'><h5>Dimenziók összehasonlítása</h5><div class='summary-chartbox bar-box'>", unsafe_allow_html=True)
+    render_bar_chart(dims, height=560)
     st.markdown("</div></div>", unsafe_allow_html=True)
-    st.markdown("<div class='summary-unit'><h5>9 stratégia térképe</h5><div class='summary-chartbox map-box'>", unsafe_allow_html=True)
-    render_strategy_map(p1.get("plan_a"), p1.get("plan_b"), height=430)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("<div class='summary-page-break summary-section-tight summary-section-wrap viz-page'>", unsafe_allow_html=True)
+    st.markdown("<h4 class='summary-page-title'>📊 Vizualizációk</h4>", unsafe_allow_html=True)
+    st.markdown("<div class='summary-unit viz-unit viz-unit-map'><h5>9 stratégia térképe</h5><div class='summary-chartbox map-box'>", unsafe_allow_html=True)
+    render_strategy_map(p1.get("plan_a"), p1.get("plan_b"), height=540)
     st.markdown("</div></div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -3857,13 +3869,13 @@ def render_summary_page(package: Dict[str, object]):
         st.markdown("</div>", unsafe_allow_html=True)
     with info_right:
         st.markdown("<div class='summary-unit'>", unsafe_allow_html=True)
-        st.subheader("Vezetői javaslatok")
+        st.subheader("Miért ezt a taktikát?")
         rec = [localize_summary_text(x) for x in ds.get("recommendation", [])]
         if not rec:
             rec = [
                 f"A fő terv maradjon a(z) {localize_summary_text(label_strategy(p1.get('plan_a', 'KIE')).lower())}, és csak akkor válts a(z) {localize_summary_text(label_strategy(p1.get('plan_b', 'BAT')).lower())} felé, ha az ellenfél nyomás nélkül tud kijönni.",
-                "A blokk tartsa a középső szerkezetet, és a presszing indítása legyen triggerhez kötött, ne folyamatos.",
-                "Saját labdával a belső progresszió és a második labdák kontrollja legyen az elsődleges edzői hangsúly.",
+                "A blokk tartsa a középső szerkezetet, és a pressing indítása legyen triggerhez kötött, ne folyamatos.",
+                "Saját labdával a belső progresszió és a second ball kontrollja legyen az elsődleges edzői hangsúly.",
             ]
         st.markdown(html_bullets(rec, limit=4), unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
