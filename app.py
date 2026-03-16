@@ -2075,55 +2075,62 @@ def get_bar_chart_svg(dims: Dict[str, Dict[str, float]]) -> str:
 
 def get_strategy_map_svg(selected_a: Optional[str] = None, selected_b: Optional[str] = None) -> str:
     rows = strategy_scatter_data(selected_a, selected_b)
-    width = 980
-    height = 470
-    left = 110
-    top = 50
+    width = 1080
+    height = 520
+    left = 120
+    top = 72
     plot_w = 760
     plot_h = 300
 
-    def px_x(v):
+    def grid_x(v: int) -> float:
         return left + ((v - 1) / 5.0) * plot_w
 
-    def px_y(v):
+    def grid_y(v: int) -> float:
         return top + plot_h - ((v - 1) / 4.0) * plot_h
 
+    def pt_x(v: int) -> float:
+        return left + (((v - 1) + 0.5) / 6.0) * plot_w
+
+    def pt_y(v: int) -> float:
+        return top + plot_h - (((v - 1) + 0.5) / 5.0) * plot_h
+
     colors = {"Paletta": "#5B2C83", "Plan A": "#E0A500", "Plan B": "#2AA7A1"}
-    svg = [f'<svg width="100%" height="{height}" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg">']
+    svg = [f'<svg width="100%" height="{height}" viewBox="0 0 {width} {height}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">']
     svg.append('<rect width="100%" height="100%" rx="18" ry="18" fill="white" />')
 
     for x in range(1, 7):
-        px = px_x(x)
+        px = grid_x(x)
         svg.append(f'<line x1="{px:.1f}" y1="{top}" x2="{px:.1f}" y2="{top + plot_h}" stroke="#ECE7F4" stroke-width="1" />')
     for y in range(1, 6):
-        py = px_y(y)
+        py = grid_y(y)
         svg.append(f'<line x1="{left}" y1="{py:.1f}" x2="{left + plot_w}" y2="{py:.1f}" stroke="#ECE7F4" stroke-width="1" />')
 
     x_labels = ["Direkt", "D/P", "Vegyes", "Kiegy.", "Kontroll", "Agresszív"]
     for i, lab in enumerate(x_labels, start=1):
-        svg.append(f'<text x="{px_x(i):.1f}" y="{top + plot_h + 28}" font-size="12" text-anchor="middle" fill="#2F1D4A">{lab}</text>')
+        svg.append(f'<text x="{pt_x(i):.1f}" y="{top + plot_h + 34}" font-size="14" text-anchor="middle" fill="#2F1D4A">{lab}</text>')
     y_labels = {1: "Mély", 2: "Alacsony-közép", 3: "Közép", 4: "Közép-magas", 5: "Magas"}
     for i, lab in y_labels.items():
-        svg.append(f'<text x="{left - 12}" y="{px_y(i) + 4:.1f}" font-size="12" text-anchor="end" fill="#2F1D4A">{lab}</text>')
+        svg.append(f'<text x="{left - 14}" y="{pt_y(i) + 5:.1f}" font-size="14" text-anchor="end" fill="#2F1D4A">{lab}</text>')
 
-    svg.append(f'<text x="{left + plot_w/2:.1f}" y="{height - 18}" font-size="13" text-anchor="middle" fill="#6D5B88">Játékstílus: Direkt → Kontroll</text>')
-    svg.append(f'<text x="26" y="{top + plot_h/2:.1f}" font-size="13" transform="rotate(-90 26 {top + plot_h/2:.1f})" text-anchor="middle" fill="#6D5B88">Blokkmagasság: Mély → Magas</text>')
+    svg.append(f'<text x="{left + plot_w/2:.1f}" y="{height - 18}" font-size="15" text-anchor="middle" fill="#6D5B88">Játékstílus: Direkt → Kontroll</text>')
+    svg.append(f'<text x="32" y="{top + plot_h/2:.1f}" font-size="15" transform="rotate(-90 32 {top + plot_h/2:.1f})" text-anchor="middle" fill="#6D5B88">Blokkmagasság: Mély → Magas</text>')
 
     for row in rows:
-        x = px_x(row['x'])
-        y = px_y(row['y'])
+        x = pt_x(int(row['x']))
+        y = pt_y(int(row['y']))
         fill = colors.get(row['marker_type'], '#5B2C83')
-        size = 19 if row['marker_type'] != 'Paletta' else 16
-        svg.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{size}" fill="{fill}" opacity="0.92" />')
+        size = 20 if row['marker_type'] != 'Paletta' else 17
+        svg.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{size}" fill="{fill}" opacity="0.94" />')
         svg.append(f'<text x="{x:.1f}" y="{y+5:.1f}" font-size="12" text-anchor="middle" fill="white" font-weight="700">{row["code"]}</text>')
-    svg.append(f'<rect x="{width - 230}" y="26" width="190" height="76" rx="10" fill="#F8F5FC" stroke="#E1D8EE" />')
+
+    legend_x = width - 215
+    svg.append(f'<rect x="{legend_x}" y="34" width="165" height="96" rx="12" fill="#F8F5FC" stroke="#E1D8EE" />')
     for idx, (lab, col) in enumerate([('Paletta','#5B2C83'),('Plan A','#E0A500'),('Plan B','#2AA7A1')]):
-        cy = 48 + idx*20
-        svg.append(f'<circle cx="{width - 205}" cy="{cy}" r="6" fill="{col}" />')
-        svg.append(f'<text x="{width - 190}" y="{cy+4}" font-size="12" fill="#2F1D4A">{lab}</text>')
+        cy = 58 + idx*25
+        svg.append(f'<circle cx="{legend_x + 26}" cy="{cy}" r="7" fill="{col}" />')
+        svg.append(f'<text x="{legend_x + 46}" y="{cy+5}" font-size="13" fill="#2F1D4A">{lab}</text>')
     svg.append('</svg>')
     return ''.join(svg)
-
 
 def build_html_export(package: Dict[str, object]) -> str:
     p1 = package["page_1_onepager"]
@@ -3113,7 +3120,7 @@ h1,h2,h3,h4,p,li,span,label,div { color:#18212F; }
 .viz-unit { break-inside: avoid; page-break-inside: avoid; }
 .viz-unit-radar .summary-chartbox { min-height: 560px; }
 .viz-unit-bar .summary-chartbox { min-height: 520px; }
-.viz-unit-map .summary-chartbox { min-height: 560px; }
+.viz-unit-map .summary-chartbox { min-height: 600px; }
 .summary-unit { break-inside: avoid; page-break-inside: avoid; margin-bottom: .4rem; }
 .summary-unit h4, .summary-unit h5, .summary-unit h3 { margin-bottom:.15rem !important; page-break-after: avoid; break-after: avoid; }
 .summary-chartbox { margin-top:0 !important; margin-bottom:4px !important; }
@@ -3127,7 +3134,7 @@ h1,h2,h3,h4,p,li,span,label,div { color:#18212F; }
 .summary-chartbox.radar-box .svg-wrap { margin-top:-8px; }
 .summary-chartbox.bar-box .svg-wrap { margin-top:-4px; }
 .summary-chartbox.map-box .svg-wrap { margin-top:0; }
-.summary-chartbox.map-box svg { width:98% !important; margin:0 auto; display:block; }
+.summary-chartbox.map-box svg { width:100% !important; max-width:100%; margin:0 auto; display:block; }
 .summary-compact-list { margin:0; padding-left:1rem; }
 .summary-compact-list li { margin:0 0 .18rem 0; line-height:1.22; }
 .summary-method { font-size:.92rem; line-height:1.35; color:#273142; margin-top:4px; }
@@ -3888,12 +3895,8 @@ def render_summary_page(package: Dict[str, object]):
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("<div class='summary-page-break summary-section-tight summary-section-wrap'>", unsafe_allow_html=True)
-    st.markdown("<div class='summary-unit'>", unsafe_allow_html=True)
-    st.subheader("Negyedórás várható lefolyás")
-    st.markdown(html_bullets(quarter_flow, empty_text="Nincs becsült negyedórás meccslefolyás."), unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+    quarter_html = html_bullets(quarter_flow, empty_text="Nincs becsült negyedórás meccslefolyás.")
+    st.markdown("<div class='summary-page-break summary-section-tight summary-section-wrap'><div class='summary-unit'><h3>Negyedórás várható lefolyás</h3>" + quarter_html + "</div></div>", unsafe_allow_html=True)
 
     st.markdown("<div class='summary-page-break summary-section-tight summary-section-wrap'>", unsafe_allow_html=True)
     st.markdown("<div class='summary-unit'>", unsafe_allow_html=True)
