@@ -3075,6 +3075,9 @@ defaults = {
     "coach_set_piece_priority": "mindkettő",
     "coach_second_ball_focus": False,
     "coach_halfspace_defense_priority": False,
+    "uploader_nonce": 0,
+    "reset_notice": False,
+    "last_input_signature": "",
 }
 
 for k, v in defaults.items():
@@ -3093,10 +3096,23 @@ RUNTIME_RESET_KEYS = [
     "decision_support", "excel_import_error"
 ]
 
-def reset_runtime_state():
+def reset_runtime_state(full_reset: bool = True):
     for key in RUNTIME_RESET_KEYS:
         if key in st.session_state:
             del st.session_state[key]
+    widget_keys = [
+        "kte_match", "kte_player", "kte_pdf_1", "kte_pdf_2", "kte_pdf_3",
+        "opp_match", "opp_player", "opp_pdf_1", "opp_pdf_2", "opp_pdf_3",
+    ]
+    if full_reset:
+        current_nonce = int(st.session_state.get("uploader_nonce", 0)) + 1
+        st.session_state["uploader_nonce"] = current_nonce
+        for base in widget_keys:
+            old_key = f"{base}_{current_nonce-1}"
+            if old_key in st.session_state:
+                del st.session_state[old_key]
+        st.session_state["last_input_signature"] = ""
+    st.session_state["reset_notice"] = True
     for key, value in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = value
@@ -3128,18 +3144,18 @@ h1,h2,h3,h4,p,li,span,label,div { color:#18212F; }
 .summary-page-break { break-before: page; page-break-before: always; margin-top: 0; }
 .summary-avoid-break, .summary-block, .summary-chartbox, .summary-viz-page, .summary-chart-block { break-inside: avoid; page-break-inside: avoid; }
 .summary-viz-page { margin-top:0; padding-top:0; }
-.summary-page-title { margin:0 0 .35rem 0 !important; }
+.summary-page-title { margin:0 0 .35rem 0 !important; break-after: avoid; page-break-after: avoid; }
 .viz-page { break-inside: avoid; page-break-inside: avoid; }
 .viz-unit { break-inside: avoid; page-break-inside: avoid; }
-.summary-chart-block { display:block; width:100%; }
+.summary-chart-block { display:flex; flex-direction:column; width:100%; break-inside: avoid; page-break-inside: avoid; overflow:hidden; }
 .viz-unit-radar .summary-chartbox { min-height: 500px; }
 .viz-unit-bar .summary-chartbox { min-height: 420px; }
 .viz-unit-map .summary-chartbox { min-height: 470px; }
 .summary-unit { break-inside: avoid; page-break-inside: avoid; margin-bottom: .4rem; }
 .summary-unit h4, .summary-unit h5, .summary-unit h3 { margin-bottom:.15rem !important; page-break-after: avoid; break-after: avoid; }
-.summary-chartbox { margin-top:0 !important; margin-bottom:4px !important; }
+.summary-chartbox { margin-top:0 !important; margin-bottom:4px !important; break-inside: avoid; page-break-inside: avoid; overflow:hidden; }
 .summary-chartbox h4, .summary-chartbox h5 { margin-bottom:0 !important; }
-.summary-chartbox iframe { margin-top:-6px !important; margin-bottom:-8px !important; }
+.summary-chartbox iframe, .summary-chartbox [data-testid="stVegaLiteChart"], .summary-chartbox .vega-embed { margin-top:-6px !important; margin-bottom:-8px !important; break-inside: avoid; page-break-inside: avoid; }
 .summary-chartbox.radar-box iframe { margin-top:-18px !important; margin-bottom:-8px !important; }
 .summary-chartbox.bar-box iframe { margin-top:-2px !important; margin-bottom:-4px !important; }
 .summary-chartbox.map-box iframe { margin-top:-10px !important; margin-bottom:-6px !important; }
@@ -3186,6 +3202,10 @@ step = st.sidebar.radio(
 
 if step == "1. Input":
     st.header("Inputok feltöltése")
+    uploader_nonce = int(st.session_state.get("uploader_nonce", 0))
+    if st.session_state.get("reset_notice"):
+        st.success("A rendszer sikeresen 0-ról újra lett generálva. Töltsd fel újra a fájlokat.")
+        st.session_state["reset_notice"] = False
     opponent_name = st.text_input(
         "Ellenfél neve",
         value=st.session_state.get("opponent_name", ""),
@@ -3195,29 +3215,50 @@ if step == "1. Input":
     st.session_state["opponent_name"] = opponent_name.strip()
 
     if st.button("🔄 Újragenerálás 0-ról", use_container_width=False):
-        reset_runtime_state()
+        reset_runtime_state(full_reset=True)
         st.rerun()
 
     c1, c2 = st.columns(2)
 
     with c1:
         st.subheader("KTE")
-        kte_match = st.file_uploader("KTE Match Excel", type=["xlsx"], key="kte_match")
-        kte_player = st.file_uploader("KTE Player Excel", type=["xlsx"], key="kte_player")
-        kte_pdf_1 = st.file_uploader("KTE PDF 1", type=["pdf"], key="kte_pdf_1")
-        kte_pdf_2 = st.file_uploader("KTE PDF 2", type=["pdf"], key="kte_pdf_2")
-        kte_pdf_3 = st.file_uploader("KTE PDF 3", type=["pdf"], key="kte_pdf_3")
+        kte_match = st.file_uploader("KTE Match Excel", type=["xlsx"], key=f"kte_match_{uploader_nonce}")
+        kte_player = st.file_uploader("KTE Player Excel", type=["xlsx"], key=f"kte_player_{uploader_nonce}")
+        kte_pdf_1 = st.file_uploader("KTE PDF 1", type=["pdf"], key=f"kte_pdf_1_{uploader_nonce}")
+        kte_pdf_2 = st.file_uploader("KTE PDF 2", type=["pdf"], key=f"kte_pdf_2_{uploader_nonce}")
+        kte_pdf_3 = st.file_uploader("KTE PDF 3", type=["pdf"], key=f"kte_pdf_3_{uploader_nonce}")
 
     with c2:
         st.subheader("Opponent")
-        opp_match = st.file_uploader("Opponent Match Excel", type=["xlsx"], key="opp_match")
-        opp_player = st.file_uploader("Opponent Player Excel", type=["xlsx"], key="opp_player")
-        opp_pdf_1 = st.file_uploader("Opponent PDF 1", type=["pdf"], key="opp_pdf_1")
-        opp_pdf_2 = st.file_uploader("Opponent PDF 2", type=["pdf"], key="opp_pdf_2")
-        opp_pdf_3 = st.file_uploader("Opponent PDF 3", type=["pdf"], key="opp_pdf_3")
+        opp_match = st.file_uploader("Opponent Match Excel", type=["xlsx"], key=f"opp_match_{uploader_nonce}")
+        opp_player = st.file_uploader("Opponent Player Excel", type=["xlsx"], key=f"opp_player_{uploader_nonce}")
+        opp_pdf_1 = st.file_uploader("Opponent PDF 1", type=["pdf"], key=f"opp_pdf_1_{uploader_nonce}")
+        opp_pdf_2 = st.file_uploader("Opponent PDF 2", type=["pdf"], key=f"opp_pdf_2_{uploader_nonce}")
+        opp_pdf_3 = st.file_uploader("Opponent PDF 3", type=["pdf"], key=f"opp_pdf_3_{uploader_nonce}")
 
     if st.session_state.get("excel_import_error"):
         st.error(st.session_state.get("excel_import_error"))
+
+    def _uploaded_signature(*files):
+        parts = []
+        for f in files:
+            if f is None:
+                parts.append("none")
+            else:
+                try:
+                    size = len(f.getvalue())
+                except Exception:
+                    size = 0
+                parts.append(f"{getattr(f, 'name', 'uploaded')}::{size}")
+        return "|".join(parts)
+
+    current_input_signature = _uploaded_signature(
+        kte_match, kte_player, kte_pdf_1, kte_pdf_2, kte_pdf_3,
+        opp_match, opp_player, opp_pdf_1, opp_pdf_2, opp_pdf_3,
+    )
+    if current_input_signature != st.session_state.get("last_input_signature", ""):
+        reset_runtime_state(full_reset=False)
+        st.session_state["last_input_signature"] = current_input_signature
 
     if kte_match and opp_match:
         st.session_state["excel_import_error"] = ""
@@ -3867,19 +3908,19 @@ def render_summary_page(package: Dict[str, object]):
     st.markdown("<div class='summary-page-break summary-viz-page summary-section-tight summary-section-wrap viz-page'>", unsafe_allow_html=True)
     st.markdown("<h4 class='summary-page-title'>📊 Vizualizációk</h4>", unsafe_allow_html=True)
     st.markdown("<div class='summary-chart-block summary-unit viz-unit viz-unit-radar'><h5>7 dimenziós profil</h5><div class='summary-chartbox radar-box'>", unsafe_allow_html=True)
-    render_radar_svg(dims, height=500, compact=True)
+    render_radar_svg(dims, height=460, compact=True)
     st.markdown("</div></div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("<div class='summary-page-break summary-section-tight summary-section-wrap viz-page'>", unsafe_allow_html=True)
     st.markdown("<div class='summary-chart-block summary-unit viz-unit viz-unit-bar'><h5>📊 Dimenziók összehasonlítása</h5><div class='summary-chartbox bar-box'>", unsafe_allow_html=True)
-    render_bar_chart(dims, height=360)
+    render_bar_chart(dims, height=330)
     st.markdown("</div></div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("<div class='summary-page-break summary-section-tight summary-section-wrap viz-page'>", unsafe_allow_html=True)
     st.markdown("<div class='summary-chart-block summary-unit viz-unit viz-unit-map'><h5>🧭 9 stratégia térképe</h5><div class='summary-note' style='margin-bottom:.35rem;'>A térkép a két csapat profilja alapján javasolt játékmodelleket mutatja a blokkmagasság és a játékstílus tengelyén.</div><div class='summary-chartbox map-box'>", unsafe_allow_html=True)
-    render_strategy_map(p1.get("plan_a"), p1.get("plan_b"), height=430)
+    render_strategy_map(p1.get("plan_a"), p1.get("plan_b"), height=390)
     st.markdown("</div></div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
