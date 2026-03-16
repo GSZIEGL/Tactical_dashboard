@@ -3111,6 +3111,13 @@ h1,h2,h3,h4,p,li,span,label,div { color:#18212F; }
 .summary-page-title { margin:0 0 .35rem 0 !important; }
 .viz-page { break-inside: avoid; page-break-inside: avoid; }
 .viz-unit { break-inside: avoid; page-break-inside: avoid; }
+.viz-grid-page { break-inside: avoid; page-break-inside: avoid; display:grid; grid-template-rows:auto auto 1fr; gap:8px; min-height: calc(100vh - 96px); align-content:start; }
+.viz-grid-title { margin:0 !important; font-size:1.08rem; font-weight:700; color:#18212F; }
+.viz-grid-note { margin:0; color:#5B6474; font-size:.92rem; line-height:1.28; }
+.viz-grid-body { break-inside: avoid; page-break-inside: avoid; display:flex; align-items:flex-start; justify-content:center; }
+.viz-grid-body img { display:block; width:100%; height:auto; object-fit:contain; }
+.viz-grid-radar img { max-width: 980px; }
+.viz-grid-bar img, .viz-grid-map img { max-width: 1400px; }
 .viz-unit-radar .summary-chartbox { min-height: 560px; }
 .viz-unit-bar .summary-chartbox { min-height: 520px; }
 .viz-unit-map .summary-chartbox { min-height: 560px; }
@@ -3143,6 +3150,8 @@ h1,h2,h3,h4,p,li,span,label,div { color:#18212F; }
   .viz-unit-radar .summary-chartbox { min-height: 540px !important; }
   .viz-unit-bar .summary-chartbox { min-height: 500px !important; }
   .viz-unit-map .summary-chartbox { min-height: 540px !important; }
+  .viz-grid-page { min-height: calc(100vh - 70px) !important; break-inside: avoid; page-break-inside: avoid; }
+  .viz-grid-body { break-inside: avoid; page-break-inside: avoid; }
   h1, h2, h3, h4, h5 { break-after: avoid; page-break-after: avoid; }
 }
 </style>
@@ -3838,38 +3847,28 @@ def render_summary_page(package: Dict[str, object]):
         merged += [f"Ellenfél: {item}" for item in danger[:2]]
         st.markdown(html_bullets(merged, empty_text="Nincs elérhető gyors összegző lista."), unsafe_allow_html=True)
 
-    # Vizualizációk külön, rendezett nyomtatási oldalakra bontva
+    # Vizualizációk külön, fix két-rácsos oldalakra bontva
     radar_png = get_radar_png_bytes(dims)
     bar_png = get_bar_chart_png_bytes(dims)
     map_png = get_strategy_map_png_bytes(p1.get("plan_a"), p1.get("plan_b"))
 
-    st.markdown("<div class='summary-page-break summary-viz-page summary-section-tight summary-section-wrap viz-page'>", unsafe_allow_html=True)
-    st.markdown("<h4 class='summary-page-title'>📊 Vizualizációk</h4>", unsafe_allow_html=True)
-    st.markdown("<div class='summary-unit viz-unit viz-unit-radar'><h5>7 dimenziós profil</h5><div class='summary-chartbox radar-box'>", unsafe_allow_html=True)
-    if radar_png:
-        st.markdown(png_bytes_to_base64_img_tag(radar_png, "7 dimenziós profil", width_style="100%"), unsafe_allow_html=True)
-    else:
-        render_radar_svg(dims, height=560, compact=True)
-    st.markdown("</div></div>", unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+    def viz_page_html(title: str, img_bytes: Optional[bytes], note: str = "", extra_class: str = "") -> str:
+        note_html = f"<div class='viz-grid-note'>{pdf_safe_text(localize_summary_text(note))}</div>" if note else ""
+        if img_bytes:
+            img_html = png_bytes_to_base64_img_tag(img_bytes, title, width_style="100%")
+        else:
+            img_html = f"<div class='summary-note'>A diagram ebben a környezetben nem renderelhető.</div>"
+        return (
+            f"<div class='summary-page-break summary-section-tight summary-section-wrap viz-page viz-grid-page {extra_class}'>"
+            f"<div class='viz-grid-title'>{pdf_safe_text(localize_summary_text(title))}</div>"
+            f"{note_html}"
+            f"<div class='viz-grid-body'>{img_html}</div>"
+            f"</div>"
+        )
 
-    st.markdown("<div class='summary-page-break summary-section-tight summary-section-wrap viz-page'>", unsafe_allow_html=True)
-    st.markdown("<div class='summary-unit viz-unit viz-unit-bar'><h5>📊 Dimenziók összehasonlítása</h5><div class='summary-chartbox bar-box'>", unsafe_allow_html=True)
-    if bar_png:
-        st.markdown(png_bytes_to_base64_img_tag(bar_png, "Dimenziók összehasonlítása", width_style="100%"), unsafe_allow_html=True)
-    else:
-        render_bar_chart(dims, height=500)
-    st.markdown("</div></div>", unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown("<div class='summary-page-break summary-section-tight summary-section-wrap viz-page'>", unsafe_allow_html=True)
-    st.markdown("<div class='summary-unit viz-unit viz-unit-map'><h5>🧭 9 stratégia térképe</h5><div class='summary-note' style='margin-bottom:.35rem;'>A térkép a két csapat profilja alapján javasolt játékmodelleket mutatja a blokkmagasság és a játékstílus tengelyén.</div><div class='summary-chartbox map-box'>", unsafe_allow_html=True)
-    if map_png:
-        st.markdown(png_bytes_to_base64_img_tag(map_png, "9 stratégia térképe", width_style="100%"), unsafe_allow_html=True)
-    else:
-        render_strategy_map(p1.get("plan_a"), p1.get("plan_b"), height=500)
-    st.markdown("</div></div>", unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown(viz_page_html("📊 Vizualizációk – 7 dimenziós profil", radar_png, extra_class="viz-grid-radar"), unsafe_allow_html=True)
+    st.markdown(viz_page_html("📊 Dimenziók összehasonlítása", bar_png, extra_class="viz-grid-bar"), unsafe_allow_html=True)
+    st.markdown(viz_page_html("🧭 9 stratégia térképe", map_png, "A térkép a két csapat profilja alapján javasolt játékmodelleket mutatja a blokkmagasság és a játékstílus tengelyén.", "viz-grid-map"), unsafe_allow_html=True)
 
     st.markdown("<div class='summary-page-break summary-section-tight summary-section-wrap'>", unsafe_allow_html=True)
     info_left, info_right = st.columns([1.02, 0.98], gap="medium")
