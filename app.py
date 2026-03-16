@@ -2922,37 +2922,164 @@ def compute_matchup_indices(team_metrics: Dict[str, float], opp_metrics: Dict[st
 
 
 def suggest_plans_from_model(team_scores: Dict[str, float], opp_scores: Dict[str, float], idx: Dict[str, float], opp_pdf_insights=None) -> Tuple[str, str, int]:
-    edge_press = team_scores["Letámadás"] - opp_scores["Labdakihozatal"]
-    edge_trans = team_scores["Átmenetek"] - max(opp_scores["Letámadás"], opp_scores["Labdabirtoklás"])
-    edge_control = (team_scores["Labdakihozatal"] + team_scores["Labdabirtoklás"]) - (opp_scores["Letámadás"] + opp_scores["Átmenetek"]) / 2
-    edge_attack = (team_scores["Támadó játék"] + team_scores["Pontrúgások"]) - (opp_scores["Pontrúgások"] + opp_scores["Lövésprofil"]) / 2
+    """Choose Plan A / Plan B from a richer matchup pattern, not from a single broad band.
+    The goal is to separate opponents whose strongest/weakest areas differ, even if the overall profile looks similar.
+    """
+    def dim_edge(name: str) -> float:
+        return float(team_scores.get(name, 0.0)) - float(opp_scores.get(name, 0.0))
 
-    score_map = {
-        "PRS": 0.9*edge_press + 0.7*edge_trans + 0.45*idx["BUVI"] - 0.35*idx["PRS2"],
-        "MLT": 1.1*edge_press + 0.8*idx["BUVI"] - 0.55*idx["PRS2"],
-        "BAT": 0.8*edge_trans + 0.5*edge_press + 0.35*idx["TTS"] + 0.2*edge_attack,
-        "DOM": 0.95*edge_control + 0.45*edge_attack - 0.35*idx["TTS"] + 0.1*idx["PRS2"],
-        "POZ": 0.85*edge_control + 0.55*edge_attack + 0.15*idx["PRS2"],
-        "KIE": 0.55*edge_control + 0.55*edge_trans + 0.15*edge_press,
-        "LAB": 0.65*edge_control - 0.25*idx["TTS"] - 0.2*edge_press,
-        "GAT": 0.95*edge_trans + 0.35*idx["BUVI"] + 0.1*edge_press,
-        "KON": 0.55*idx["TTS"] - 0.4*edge_control + 0.35*edge_trans,
+    edges = {
+        "Letámadás": dim_edge("Letámadás"),
+        "Labdakihozatal": dim_edge("Labdakihozatal"),
+        "Átmenetek": dim_edge("Átmenetek"),
+        "Támadó játék": dim_edge("Támadó játék"),
+        "Pontrúgások": dim_edge("Pontrúgások"),
+        "Labdabirtoklás": dim_edge("Labdabirtoklás"),
+        "Lövésprofil": dim_edge("Lövésprofil"),
     }
 
+    # match-up composites
+    build_up_edge = 0.70 * edges["Labdakihozatal"] + 0.30 * edges["Labdabirtoklás"]
+    control_edge = 0.45 * edges["Labdakihozatal"] + 0.35 * edges["Labdabirtoklás"] + 0.20 * edges["Pontrúgások"]
+    press_edge = 0.80 * edges["Letámadás"] + 0.20 * (float(team_scores.get("Letámadás", 0.0)) - float(opp_scores.get("Labdakihozatal", 0.0)))
+    transition_edge = 0.65 * edges["Átmenetek"] + 0.20 * edges["Lövésprofil"] + 0.15 * edges["Letámadás"]
+    attacking_edge = 0.60 * edges["Támadó játék"] + 0.25 * edges["Pontrúgások"] + 0.15 * edges["Lövésprofil"]
+    defensive_risk = max(-edges["Lövésprofil"], 0.0) + 0.55 * max(-edges["Átmenetek"], 0.0)
+
+    top_pos_dim, top_pos_val = max(edges.items(), key=lambda kv: kv[1])
+    top_neg_dim, top_neg_val = min(edges.items(), key=lambda kv: kv[1])
+
+    opp_archetype = "vegyes"
+    if opp_scores.get("Átmenetek", 0.0) >= 7.0 and opp_scores.get("Támadó játék", 0.0) >= 6.6:
+        opp_archetype = "átmenet"
+    elif opp_scores.get("Labdakihozatal", 0.0) >= 6.9 and opp_scores.get("Labdabirtoklás", 0.0) >= 5.8:
+        opp_archetype = "build_up"
+    elif opp_scores.get("Letámadás", 0.0) >= 6.9:
+        opp_archetype = "presszing"
+    elif opp_scores.get("Támadó játék", 0.0) >= 7.2 and opp_scores.get("Átmenetek", 0.0) < 6.0:
+        opp_archetype = "pozíciós"
+    elif opp_scores.get("Labdabirtoklás", 0.0) < 4.7 and opp_scores.get("Támadó játék", 0.0) < 5.8:
+        opp_archetype = "reaktív"
+
+    score_map = {
+        "POZ": 1.15 * attacking_edge + 0.90 * build_up_edge + 0.45 * control_edge - 0.35 * defensive_risk,
+        "DOM": 0.95 * attacking_edge + 0.65 * press_edge + 0.55 * control_edge - 0.30 * defensive_risk,
+        "LAB": 1.05 * build_up_edge + 0.85 * control_edge - 0.55 * transition_edge - 0.15 * press_edge,
+        "KIE": 0.70 * build_up_edge + 0.70 * transition_edge + 0.50 * control_edge - 0.20 * defensive_risk,
+        "BAT": 1.10 * transition_edge + 0.45 * press_edge + 0.35 * attacking_edge + 0.25 * idx.get("TTS", 5.0),
+        "GAT": 1.20 * transition_edge + 0.35 * idx.get("BUVI", 5.0) - 0.25 * control_edge,
+        "PRS": 1.10 * press_edge + 0.50 * transition_edge + 0.35 * idx.get("BUVI", 5.0) - 0.35 * idx.get("PRS2", 5.0),
+        "MLT": 1.30 * press_edge + 0.70 * idx.get("BUVI", 5.0) - 0.55 * idx.get("PRS2", 5.0) - 0.20 * defensive_risk,
+        "KON": 0.95 * transition_edge + 0.55 * defensive_risk - 0.60 * control_edge + 0.20 * idx.get("TTS", 5.0),
+    }
+
+    # Biggest positive edge should matter a lot; this is what separates similar-looking teams.
+    if top_pos_val >= 1.1:
+        if top_pos_dim == "Támadó játék":
+            score_map["POZ"] += 1.05
+            score_map["DOM"] += 0.75
+            score_map["BAT"] += 0.25
+        elif top_pos_dim == "Labdakihozatal":
+            score_map["LAB"] += 1.00
+            score_map["POZ"] += 0.70
+            score_map["KIE"] += 0.55
+        elif top_pos_dim == "Letámadás":
+            score_map["PRS"] += 1.00
+            score_map["MLT"] += 0.70
+            score_map["BAT"] += 0.45
+        elif top_pos_dim == "Átmenetek":
+            score_map["BAT"] += 0.95
+            score_map["GAT"] += 0.80
+            score_map["KON"] += 0.45
+        elif top_pos_dim == "Labdabirtoklás":
+            score_map["LAB"] += 0.85
+            score_map["POZ"] += 0.65
+            score_map["DOM"] += 0.35
+        elif top_pos_dim == "Pontrúgások":
+            score_map["BAT"] += 0.60
+            score_map["KIE"] += 0.30
+        elif top_pos_dim == "Lövésprofil":
+            score_map["GAT"] += 0.60
+            score_map["KON"] += 0.55
+            score_map["BAT"] += 0.35
+
+    # Strongest risk should push the model away from tactically naive choices.
+    if top_neg_val <= -1.0:
+        if top_neg_dim == "Lövésprofil":
+            score_map["BAT"] += 0.80
+            score_map["KIE"] += 0.60
+            score_map["DOM"] -= 0.45
+            score_map["MLT"] -= 0.30
+        elif top_neg_dim == "Átmenetek":
+            score_map["KIE"] += 0.70
+            score_map["LAB"] += 0.40
+            score_map["MLT"] -= 0.35
+            score_map["PRS"] -= 0.20
+        elif top_neg_dim == "Letámadás":
+            score_map["LAB"] += 0.45
+            score_map["POZ"] += 0.30
+            score_map["MLT"] -= 0.50
+        elif top_neg_dim == "Labdakihozatal":
+            score_map["BAT"] += 0.50
+            score_map["GAT"] += 0.45
+            score_map["LAB"] -= 0.60
+            score_map["POZ"] -= 0.35
+
+    # Opponent archetype separation.
+    if opp_archetype == "átmenet":
+        score_map["BAT"] += 0.65
+        score_map["KIE"] += 0.35
+        score_map["POZ"] -= 0.20
+    elif opp_archetype == "build_up":
+        score_map["PRS"] += 0.55
+        score_map["BAT"] += 0.30
+        score_map["MLT"] += 0.20
+    elif opp_archetype == "presszing":
+        score_map["LAB"] += 0.55
+        score_map["POZ"] += 0.30
+        score_map["MLT"] -= 0.20
+    elif opp_archetype == "pozíciós":
+        score_map["BAT"] += 0.55
+        score_map["KON"] += 0.35
+        score_map["POZ"] -= 0.25
+    elif opp_archetype == "reaktív":
+        score_map["POZ"] += 0.45
+        score_map["DOM"] += 0.30
+        score_map["KON"] -= 0.25
+
+    # Formation nudges from PDF scouting.
     if opp_pdf_insights and opp_pdf_insights.get("formation"):
         f = opp_pdf_insights.get("formation", "")
         if f.startswith("3-"):
-            score_map["PRS"] += 0.2
-            score_map["BAT"] += 0.2
+            score_map["PRS"] += 0.20
+            score_map["BAT"] += 0.20
         if f.startswith("4-2-3"):
-            score_map["DOM"] += 0.15
             score_map["POZ"] += 0.15
+            score_map["LAB"] += 0.10
+        if f.startswith("4-4-2"):
+            score_map["BAT"] += 0.20
+            score_map["KON"] += 0.10
 
     ordered = sorted(score_map.items(), key=lambda x: x[1], reverse=True)
     plan_a = ordered[0][0]
-    plan_b = next(code for code, _ in ordered[1:] if code != plan_a)
-    gap = ordered[0][1] - ordered[1][1]
-    split = 60 if gap >= 1.25 else 57 if gap >= 0.65 else 55
+
+    # Make Plan B meaningfully different from Plan A when the scores are close.
+    family = {
+        "POZ": "control", "DOM": "control", "LAB": "control", "KIE": "balanced",
+        "BAT": "transition", "GAT": "transition", "PRS": "press", "MLT": "press", "KON": "reactive"
+    }
+    plan_b = None
+    for code, score in ordered[1:]:
+        if code == plan_a:
+            continue
+        if family.get(code) != family.get(plan_a):
+            plan_b = code
+            break
+    if plan_b is None:
+        plan_b = ordered[1][0]
+
+    gap = ordered[0][1] - next(score for code, score in ordered if code == plan_b)
+    split = 62 if gap >= 1.4 else 60 if gap >= 0.8 else 57
     return plan_a, plan_b, split
 
 
