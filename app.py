@@ -3278,7 +3278,7 @@ if step == "1. Input":
     st.header("Inputok feltöltése")
     uploader_nonce = int(st.session_state.get("uploader_nonce", 0))
     if st.session_state.get("reset_notice"):
-        st.success("A rendszer sikeresen 0-ról újra lett generálva. Töltsd fel újra a fájlokat.")
+        st.success("✔ Rendszer teljesen újragenerálva. Töltsd fel újra a fájlokat.")
         st.session_state["reset_notice"] = False
     opponent_name = st.text_input(
         "Ellenfél neve",
@@ -3983,21 +3983,20 @@ def render_summary_page(package: Dict[str, object]):
 
     # Vizualizációk külön, rendezett nyomtatási oldalakra bontva
     st.markdown("<div class='summary-page-break summary-viz-page summary-section-tight summary-section-wrap viz-page'>", unsafe_allow_html=True)
-    st.markdown("<h4 class='summary-page-title'>📊 Vizualizációk</h4>", unsafe_allow_html=True)
-    st.markdown("<div class='summary-chart-block summary-unit viz-unit viz-unit-radar'><h5>7 dimenziós profil</h5><div class='summary-chartbox radar-box'>", unsafe_allow_html=True)
-    render_radar_svg(dims, height=460, compact=True)
+    st.markdown("<div class='summary-chart-block summary-unit viz-unit viz-unit-radar'><div class='summary-chartbox radar-box'>", unsafe_allow_html=True)
+    render_radar_svg(dims, height=440, compact=True)
     st.markdown("</div></div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("<div class='summary-page-break summary-section-tight summary-section-wrap viz-page'>", unsafe_allow_html=True)
-    st.markdown("<div class='summary-chart-block summary-unit viz-unit viz-unit-bar'><h5>📊 Dimenziók összehasonlítása</h5><div class='summary-chartbox bar-box'>", unsafe_allow_html=True)
-    render_bar_chart(dims, height=330)
+    st.markdown("<div class='summary-chart-block summary-unit viz-unit viz-unit-bar'><div class='summary-chartbox bar-box'>", unsafe_allow_html=True)
+    render_bar_chart(dims, height=320)
     st.markdown("</div></div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("<div class='summary-page-break summary-section-tight summary-section-wrap viz-page'>", unsafe_allow_html=True)
-    st.markdown("<div class='summary-chart-block summary-unit viz-unit viz-unit-map'><h5>🧭 9 stratégia térképe</h5><div class='summary-note' style='margin-bottom:.35rem;'>A térkép a két csapat profilja alapján javasolt játékmodelleket mutatja a blokkmagasság és a játékstílus tengelyén.</div><div class='summary-chartbox map-box'>", unsafe_allow_html=True)
-    render_strategy_map(p1.get("plan_a"), p1.get("plan_b"), height=390)
+    st.markdown("<div class='summary-chart-block summary-unit viz-unit viz-unit-map'><div class='summary-chartbox map-box'>", unsafe_allow_html=True)
+    render_strategy_map(p1.get("plan_a"), p1.get("plan_b"), height=360)
     st.markdown("</div></div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
