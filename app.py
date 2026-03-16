@@ -2077,10 +2077,11 @@ def get_strategy_map_svg(selected_a: Optional[str] = None, selected_b: Optional[
     rows = strategy_scatter_data(selected_a, selected_b)
     width = 1080
     height = 520
-    left = 120
+    left = 150
     top = 72
-    plot_w = 760
+    plot_w = 700
     plot_h = 300
+    legend_x = 900
 
     def grid_x(v: int) -> float:
         return left + ((v - 1) / 5.0) * plot_w
@@ -2088,15 +2089,15 @@ def get_strategy_map_svg(selected_a: Optional[str] = None, selected_b: Optional[
     def grid_y(v: int) -> float:
         return top + plot_h - ((v - 1) / 4.0) * plot_h
 
-    def pt_x(v: int) -> float:
-        return left + (((v - 1) + 0.5) / 6.0) * plot_w
-
-    def pt_y(v: int) -> float:
-        return top + plot_h - (((v - 1) + 0.5) / 5.0) * plot_h
-
     colors = {"Paletta": "#5B2C83", "Plan A": "#E0A500", "Plan B": "#2AA7A1"}
+    x_labels = ["Direkt", "D/P", "Vegyes", "Kiegy.", "Kontroll", "Agresszív"]
+    y_labels = {1: "Mély", 2: "Alacsony-közép", 3: "Közép", 4: "Közép-magas", 5: "Magas"}
+
     svg = [f'<svg width="100%" height="{height}" viewBox="0 0 {width} {height}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">']
     svg.append('<rect width="100%" height="100%" rx="18" ry="18" fill="white" />')
+
+    # plot border
+    svg.append(f'<rect x="{left}" y="{top}" width="{plot_w}" height="{plot_h}" fill="none" stroke="#ECE7F4" stroke-width="1.2" />')
 
     for x in range(1, 7):
         px = grid_x(x)
@@ -2105,32 +2106,37 @@ def get_strategy_map_svg(selected_a: Optional[str] = None, selected_b: Optional[
         py = grid_y(y)
         svg.append(f'<line x1="{left}" y1="{py:.1f}" x2="{left + plot_w}" y2="{py:.1f}" stroke="#ECE7F4" stroke-width="1" />')
 
-    x_labels = ["Direkt", "D/P", "Vegyes", "Kiegy.", "Kontroll", "Agresszív"]
     for i, lab in enumerate(x_labels, start=1):
-        svg.append(f'<text x="{pt_x(i):.1f}" y="{top + plot_h + 34}" font-size="14" text-anchor="middle" fill="#2F1D4A">{lab}</text>')
-    y_labels = {1: "Mély", 2: "Alacsony-közép", 3: "Közép", 4: "Közép-magas", 5: "Magas"}
+        svg.append(f'<text x="{grid_x(i):.1f}" y="{top + plot_h + 38}" font-size="14" text-anchor="middle" fill="#2F1D4A">{lab}</text>')
     for i, lab in y_labels.items():
-        svg.append(f'<text x="{left - 14}" y="{pt_y(i) + 5:.1f}" font-size="14" text-anchor="end" fill="#2F1D4A">{lab}</text>')
+        svg.append(f'<text x="{left - 16}" y="{grid_y(i) + 5:.1f}" font-size="14" text-anchor="end" fill="#2F1D4A">{lab}</text>')
 
     svg.append(f'<text x="{left + plot_w/2:.1f}" y="{height - 18}" font-size="15" text-anchor="middle" fill="#6D5B88">Játékstílus: Direkt → Kontroll</text>')
-    svg.append(f'<text x="32" y="{top + plot_h/2:.1f}" font-size="15" transform="rotate(-90 32 {top + plot_h/2:.1f})" text-anchor="middle" fill="#6D5B88">Blokkmagasság: Mély → Magas</text>')
+    svg.append(f'<text x="36" y="{top + plot_h/2:.1f}" font-size="15" transform="rotate(-90 36 {top + plot_h/2:.1f})" text-anchor="middle" fill="#6D5B88">Blokkmagasság: Mély → Magas</text>')
 
+    # jitter exact overlaps so Plan A/B can still be seen on same grid point
+    overlap_tracker = {}
+    offsets = [(0,0), (-16,-12), (16,12), (-16,12), (16,-12)]
     for row in rows:
-        x = pt_x(int(row['x']))
-        y = pt_y(int(row['y']))
+        key = (int(row['x']), int(row['y']))
+        idx = overlap_tracker.get(key, 0)
+        overlap_tracker[key] = idx + 1
+        dx, dy = offsets[min(idx, len(offsets)-1)] if row['marker_type'] != 'Paletta' else (0,0)
+        x = grid_x(int(row['x'])) + dx
+        y = grid_y(int(row['y'])) + dy
         fill = colors.get(row['marker_type'], '#5B2C83')
         size = 20 if row['marker_type'] != 'Paletta' else 17
         svg.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{size}" fill="{fill}" opacity="0.94" />')
         svg.append(f'<text x="{x:.1f}" y="{y+5:.1f}" font-size="12" text-anchor="middle" fill="white" font-weight="700">{row["code"]}</text>')
 
-    legend_x = width - 215
-    svg.append(f'<rect x="{legend_x}" y="34" width="165" height="96" rx="12" fill="#F8F5FC" stroke="#E1D8EE" />')
+    svg.append(f'<rect x="{legend_x}" y="34" width="145" height="96" rx="12" fill="#F8F5FC" stroke="#E1D8EE" />')
     for idx, (lab, col) in enumerate([('Paletta','#5B2C83'),('Plan A','#E0A500'),('Plan B','#2AA7A1')]):
         cy = 58 + idx*25
-        svg.append(f'<circle cx="{legend_x + 26}" cy="{cy}" r="7" fill="{col}" />')
-        svg.append(f'<text x="{legend_x + 46}" y="{cy+5}" font-size="13" fill="#2F1D4A">{lab}</text>')
+        svg.append(f'<circle cx="{legend_x + 24}" cy="{cy}" r="7" fill="{col}" />')
+        svg.append(f'<text x="{legend_x + 44}" y="{cy+5}" font-size="13" fill="#2F1D4A">{lab}</text>')
     svg.append('</svg>')
     return ''.join(svg)
+
 
 def build_html_export(package: Dict[str, object]) -> str:
     p1 = package["page_1_onepager"]
@@ -2836,17 +2842,6 @@ def run_engine(
             "Edge": round(team_scores[k] - opp_scores[k], 1),
         }
 
-    edge_transition = team_scores["Átmenetek"] - opp_scores["Lövésprofil"]
-    edge_control = team_scores["Labdakihozatal"] + team_scores["Labdabirtoklás"] - opp_scores["Letámadás"]
-    edge_attack = team_scores["Támadó játék"] + team_scores["Pontrúgások"] - opp_scores["Labdabirtoklás"]
-
-    if edge_transition >= max(edge_control, edge_attack):
-        suggested_a, suggested_b, suggested_split = "GAT", "BAT", 60
-    elif edge_control >= max(edge_transition, edge_attack):
-        suggested_a, suggested_b, suggested_split = "KIE", "POZ", 55
-    else:
-        suggested_a, suggested_b, suggested_split = "PRS", "MLT", 55
-
     team_players = parse_player_excel(team_player_file.getvalue()) if team_player_file else None
     opp_players = parse_player_excel(opp_player_file.getvalue()) if opp_player_file else None
 
@@ -2855,6 +2850,9 @@ def run_engine(
 
     team_pdf_insights = build_pdf_insights(team_pdf_text) if team_pdf_text.strip() else None
     opp_pdf_insights = build_pdf_insights(opp_pdf_text) if opp_pdf_text.strip() else None
+
+    matchup_indices = compute_matchup_indices(team_metrics, opp_metrics, team_matches, opp_matches, opp_players=opp_players, team_players=team_players)
+    suggested_a, suggested_b, suggested_split = suggest_plans_from_model(team_scores, opp_scores, matchup_indices, opp_pdf_insights)
 
     warnings = build_warning_list(opp_players, opp_pdf_insights)
     three_keys = build_three_keys(dims, opp_pdf_insights, warnings)
@@ -2887,6 +2885,100 @@ def run_engine(
         opp_pdf_pages,
         opponent_dna_text,
     )
+
+
+def _safe_group_top_mean(players: Optional[Dict[str, pd.DataFrame]], group: str, value_candidates: List[str]) -> float:
+    if not players or group not in players or players[group] is None or players[group].empty:
+        return 0.0
+    df = players[group]
+    col = first_existing_column(df, value_candidates)
+    if not col:
+        return 0.0
+    vals = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+    if vals.empty:
+        return 0.0
+    return float(vals.head(3).mean())
+
+
+def compute_matchup_indices(team_metrics: Dict[str, float], opp_metrics: Dict[str, float], team_matches: int, opp_matches: int, opp_players=None, team_players=None) -> Dict[str, float]:
+    team_matches = max(team_matches or 1, 1)
+    opp_matches = max(opp_matches or 1, 1)
+    opp_pass = opp_metrics.get("passes_accurate_pct", 0)
+    team_press = team_metrics.get("pressing_success_pct", 0)
+    opp_poss = opp_metrics.get("possession_pct", 0)
+    if opp_pass <= 1: opp_pass *= 100
+    if team_press <= 1: team_press *= 100
+    if opp_poss <= 1: opp_poss *= 100
+
+    opp_entries_pm = opp_metrics.get("entries_box", 0) / opp_matches
+    opp_keypasses_pm = opp_metrics.get("key_passes", 0) / opp_matches
+    opp_shots_pm = opp_metrics.get("shots", 0) / opp_matches
+    team_entries_pm = team_metrics.get("entries_box", 0) / team_matches
+    team_keypasses_pm = team_metrics.get("key_passes", 0) / team_matches
+
+    opp_prog = _safe_group_top_mean(opp_players, "progressors", ["progressive_passes"])
+    opp_build = _safe_group_top_mean(opp_players, "build_up", ["passes"])
+    opp_create = _safe_group_top_mean(opp_players, "creators", ["key_passes"])
+    team_press_bonus = max(0.0, (team_press - 45) / 10.0)
+
+    buvi = clamp(
+        10
+        - ((opp_pass - 58) / 4.8)
+        + team_press_bonus
+        + max(0.0, (opp_metrics.get("ppda", 0) - 1.5) * 0.8),
+        1, 10
+    )
+    tts = clamp(
+        1 + 0.23 * opp_entries_pm + 0.55 * opp_keypasses_pm + 0.28 * opp_shots_pm + 0.04 * opp_create,
+        1, 10
+    )
+    prs2 = clamp(
+        1 + 0.10 * opp_pass + 0.06 * opp_poss + 0.05 * opp_prog + 0.0025 * opp_build,
+        1, 10
+    )
+    kte_attack_index = clamp(1 + 0.26 * team_entries_pm + 0.65 * team_keypasses_pm, 1, 10)
+    return {
+        "BUVI": round(buvi, 1),
+        "TTS": round(tts, 1),
+        "PRS2": round(prs2, 1),
+        "KTE_ATTACK": round(kte_attack_index, 1),
+    }
+
+
+def suggest_plans_from_model(team_scores: Dict[str, float], opp_scores: Dict[str, float], idx: Dict[str, float], opp_pdf_insights=None) -> Tuple[str, str, int]:
+    edge_press = team_scores["Letámadás"] - opp_scores["Labdakihozatal"]
+    edge_trans = team_scores["Átmenetek"] - max(opp_scores["Letámadás"], opp_scores["Labdabirtoklás"])
+    edge_control = (team_scores["Labdakihozatal"] + team_scores["Labdabirtoklás"]) - (opp_scores["Letámadás"] + opp_scores["Átmenetek"]) / 2
+    edge_attack = (team_scores["Támadó játék"] + team_scores["Pontrúgások"]) - (opp_scores["Pontrúgások"] + opp_scores["Lövésprofil"]) / 2
+
+    score_map = {
+        "PRS": 0.9*edge_press + 0.7*edge_trans + 0.45*idx["BUVI"] - 0.35*idx["PRS2"],
+        "MLT": 1.1*edge_press + 0.8*idx["BUVI"] - 0.55*idx["PRS2"],
+        "BAT": 0.8*edge_trans + 0.5*edge_press + 0.35*idx["TTS"] + 0.2*edge_attack,
+        "DOM": 0.95*edge_control + 0.45*edge_attack - 0.35*idx["TTS"] + 0.1*idx["PRS2"],
+        "POZ": 0.85*edge_control + 0.55*edge_attack + 0.15*idx["PRS2"],
+        "KIE": 0.55*edge_control + 0.55*edge_trans + 0.15*edge_press,
+        "LAB": 0.65*edge_control - 0.25*idx["TTS"] - 0.2*edge_press,
+        "GAT": 0.95*edge_trans + 0.35*idx["BUVI"] + 0.1*edge_press,
+        "KON": 0.55*idx["TTS"] - 0.4*edge_control + 0.35*edge_trans,
+    }
+
+    if opp_pdf_insights and opp_pdf_insights.get("formation"):
+        f = opp_pdf_insights.get("formation", "")
+        if f.startswith("3-"):
+            score_map["PRS"] += 0.2
+            score_map["BAT"] += 0.2
+        if f.startswith("4-2-3"):
+            score_map["DOM"] += 0.15
+            score_map["POZ"] += 0.15
+
+    ordered = sorted(score_map.items(), key=lambda x: x[1], reverse=True)
+    plan_a = ordered[0][0]
+    plan_b = next(code for code, _ in ordered[1:] if code != plan_a)
+    gap = ordered[0][1] - ordered[1][1]
+    split = 60 if gap >= 1.25 else 57 if gap >= 0.65 else 55
+    return plan_a, plan_b, split
+
 
 
 # =========================================================
@@ -3120,7 +3212,7 @@ h1,h2,h3,h4,p,li,span,label,div { color:#18212F; }
 .viz-unit { break-inside: avoid; page-break-inside: avoid; }
 .viz-unit-radar .summary-chartbox { min-height: 560px; }
 .viz-unit-bar .summary-chartbox { min-height: 520px; }
-.viz-unit-map .summary-chartbox { min-height: 600px; }
+.viz-unit-map .summary-chartbox { min-height: 560px; }
 .summary-unit { break-inside: avoid; page-break-inside: avoid; margin-bottom: .4rem; }
 .summary-unit h4, .summary-unit h5, .summary-unit h3 { margin-bottom:.15rem !important; page-break-after: avoid; break-after: avoid; }
 .summary-chartbox { margin-top:0 !important; margin-bottom:4px !important; }
@@ -3128,13 +3220,7 @@ h1,h2,h3,h4,p,li,span,label,div { color:#18212F; }
 .summary-chartbox iframe { margin-top:-6px !important; margin-bottom:-8px !important; }
 .summary-chartbox.radar-box iframe { margin-top:-22px !important; margin-bottom:-10px !important; }
 .summary-chartbox.bar-box iframe { margin-top:-4px !important; margin-bottom:-6px !important; }
-.summary-chartbox.map-box iframe { margin-top:-8px !important; margin-bottom:-8px !important; }
-.summary-chartbox svg { width:100% !important; height:auto !important; display:block; }
-.summary-chartbox .svg-wrap { width:100%; overflow:hidden; }
-.summary-chartbox.radar-box .svg-wrap { margin-top:-8px; }
-.summary-chartbox.bar-box .svg-wrap { margin-top:-4px; }
-.summary-chartbox.map-box .svg-wrap { margin-top:0; }
-.summary-chartbox.map-box svg { width:100% !important; max-width:100%; margin:0 auto; display:block; }
+.summary-chartbox.map-box iframe { margin-top:-20px !important; margin-bottom:-10px !important; }
 .summary-compact-list { margin:0; padding-left:1rem; }
 .summary-compact-list li { margin:0 0 .18rem 0; line-height:1.22; }
 .summary-method { font-size:.92rem; line-height:1.35; color:#273142; margin-top:4px; }
@@ -3153,7 +3239,6 @@ h1,h2,h3,h4,p,li,span,label,div { color:#18212F; }
   .summary-page-break { break-before: page; page-break-before: always; }
   .summary-avoid-break, .summary-block, .summary-chartbox, .summary-viz-page, .summary-unit, .summary-section-wrap { break-inside: avoid; page-break-inside: avoid; }
   .summary-chartbox iframe { margin-top:-8px !important; margin-bottom:-12px !important; }
-  .summary-chartbox svg { width:100% !important; height:auto !important; display:block; }
   .viz-unit-radar .summary-chartbox { min-height: 540px !important; }
   .viz-unit-bar .summary-chartbox { min-height: 500px !important; }
   .viz-unit-map .summary-chartbox { min-height: 540px !important; }
@@ -3853,15 +3938,37 @@ def render_summary_page(package: Dict[str, object]):
         st.markdown(html_bullets(merged, empty_text="Nincs elérhető gyors összegző lista."), unsafe_allow_html=True)
 
     # Vizualizációk külön, rendezett nyomtatási oldalakra bontva
-    radar_svg = get_radar_svg(dims, compact=True)
-    bar_svg = get_bar_chart_svg(dims)
-    map_svg = get_strategy_map_svg(p1.get("plan_a"), p1.get("plan_b"))
+    radar_png = get_radar_png_bytes(dims)
+    bar_png = get_bar_chart_png_bytes(dims)
+    map_png = get_strategy_map_png_bytes(p1.get("plan_a"), p1.get("plan_b"))
 
-    st.markdown("<div class='summary-page-break summary-viz-page summary-section-tight summary-section-wrap viz-page'><h4 class='summary-page-title'>📊 Vizualizációk</h4><div class='summary-unit viz-unit viz-unit-radar'><h5>7 dimenziós profil</h5><div class='summary-chartbox radar-box'><div class='svg-wrap'>" + radar_svg + "</div></div></div></div>", unsafe_allow_html=True)
+    st.markdown("<div class='summary-page-break summary-viz-page summary-section-tight summary-section-wrap viz-page'>", unsafe_allow_html=True)
+    st.markdown("<h4 class='summary-page-title'>📊 Vizualizációk</h4>", unsafe_allow_html=True)
+    st.markdown("<div class='summary-unit viz-unit viz-unit-radar'><h5>7 dimenziós profil</h5><div class='summary-chartbox radar-box'>", unsafe_allow_html=True)
+    if radar_png:
+        st.markdown(png_bytes_to_base64_img_tag(radar_png, "7 dimenziós profil", width_style="100%"), unsafe_allow_html=True)
+    else:
+        render_radar_svg(dims, height=560, compact=True)
+    st.markdown("</div></div>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("<div class='summary-page-break summary-section-tight summary-section-wrap viz-page'><div class='summary-unit viz-unit viz-unit-bar'><h5>📊 Dimenziók összehasonlítása</h5><div class='summary-chartbox bar-box'><div class='svg-wrap'>" + bar_svg + "</div></div></div></div>", unsafe_allow_html=True)
+    st.markdown("<div class='summary-page-break summary-section-tight summary-section-wrap viz-page'>", unsafe_allow_html=True)
+    st.markdown("<div class='summary-unit viz-unit viz-unit-bar'><h5>📊 Dimenziók összehasonlítása</h5><div class='summary-chartbox bar-box'>", unsafe_allow_html=True)
+    if bar_png:
+        st.markdown(png_bytes_to_base64_img_tag(bar_png, "Dimenziók összehasonlítása", width_style="100%"), unsafe_allow_html=True)
+    else:
+        render_bar_chart(dims, height=500)
+    st.markdown("</div></div>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("<div class='summary-page-break summary-section-tight summary-section-wrap viz-page'><div class='summary-unit viz-unit viz-unit-map'><h5>🧭 9 stratégia térképe</h5><div class='summary-note' style='margin-bottom:.35rem;'>A térkép a két csapat profilja alapján javasolt játékmodelleket mutatja a blokkmagasság és a játékstílus tengelyén.</div><div class='summary-chartbox map-box'><div class='svg-wrap'>" + map_svg + "</div></div></div></div>", unsafe_allow_html=True)
+    st.markdown("<div class='summary-page-break summary-section-tight summary-section-wrap viz-page'>", unsafe_allow_html=True)
+    st.markdown("<div class='summary-unit viz-unit viz-unit-map'><h5>🧭 9 stratégia térképe</h5><div class='summary-note' style='margin-bottom:.35rem;'>A térkép a két csapat profilja alapján javasolt játékmodelleket mutatja a blokkmagasság és a játékstílus tengelyén.</div><div class='summary-chartbox map-box'>", unsafe_allow_html=True)
+    if map_png:
+        st.markdown(png_bytes_to_base64_img_tag(map_png, "9 stratégia térképe", width_style="100%"), unsafe_allow_html=True)
+    else:
+        render_strategy_map(p1.get("plan_a"), p1.get("plan_b"), height=500)
+    st.markdown("</div></div>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("<div class='summary-page-break summary-section-tight summary-section-wrap'>", unsafe_allow_html=True)
     info_left, info_right = st.columns([1.02, 0.98], gap="medium")
@@ -3893,10 +4000,11 @@ def render_summary_page(package: Dict[str, object]):
         st.markdown(html_bullets(rec, limit=4), unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
+    st.markdown("<div class='summary-unit'>", unsafe_allow_html=True)
+    st.subheader("Negyedórás várható lefolyás")
+    st.markdown(html_bullets(quarter_flow, empty_text="Nincs becsült negyedórás meccslefolyás."), unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
-
-    quarter_html = html_bullets(quarter_flow, empty_text="Nincs becsült negyedórás meccslefolyás.")
-    st.markdown("<div class='summary-page-break summary-section-tight summary-section-wrap'><div class='summary-unit'><h3>Negyedórás várható lefolyás</h3>" + quarter_html + "</div></div>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("<div class='summary-page-break summary-section-tight summary-section-wrap'>", unsafe_allow_html=True)
     st.markdown("<div class='summary-unit'>", unsafe_allow_html=True)
