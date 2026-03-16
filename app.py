@@ -3839,22 +3839,35 @@ def render_summary_page(package: Dict[str, object]):
         st.markdown(html_bullets(merged, empty_text="Nincs elérhető gyors összegző lista."), unsafe_allow_html=True)
 
     # Vizualizációk külön, rendezett nyomtatási oldalakra bontva
+    radar_png = get_radar_png_bytes(dims)
+    bar_png = get_bar_chart_png_bytes(dims)
+    map_png = get_strategy_map_png_bytes(p1.get("plan_a"), p1.get("plan_b"))
+
     st.markdown("<div class='summary-page-break summary-viz-page summary-section-tight summary-section-wrap viz-page'>", unsafe_allow_html=True)
     st.markdown("<h4 class='summary-page-title'>📊 Vizualizációk</h4>", unsafe_allow_html=True)
     st.markdown("<div class='summary-unit viz-unit viz-unit-radar'><h5>7 dimenziós profil</h5><div class='summary-chartbox radar-box'>", unsafe_allow_html=True)
-    render_radar_svg(dims, height=560, compact=True)
+    if radar_png:
+        st.markdown(png_bytes_to_base64_img_tag(radar_png, "7 dimenziós profil", width_style="100%"), unsafe_allow_html=True)
+    else:
+        render_radar_svg(dims, height=560, compact=True)
     st.markdown("</div></div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("<div class='summary-page-break summary-section-tight summary-section-wrap viz-page'>", unsafe_allow_html=True)
     st.markdown("<div class='summary-unit viz-unit viz-unit-bar'><h5>📊 Dimenziók összehasonlítása</h5><div class='summary-chartbox bar-box'>", unsafe_allow_html=True)
-    render_bar_chart(dims, height=500)
+    if bar_png:
+        st.markdown(png_bytes_to_base64_img_tag(bar_png, "Dimenziók összehasonlítása", width_style="100%"), unsafe_allow_html=True)
+    else:
+        render_bar_chart(dims, height=500)
     st.markdown("</div></div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("<div class='summary-page-break summary-section-tight summary-section-wrap viz-page'>", unsafe_allow_html=True)
     st.markdown("<div class='summary-unit viz-unit viz-unit-map'><h5>🧭 9 stratégia térképe</h5><div class='summary-note' style='margin-bottom:.35rem;'>A térkép a két csapat profilja alapján javasolt játékmodelleket mutatja a blokkmagasság és a játékstílus tengelyén.</div><div class='summary-chartbox map-box'>", unsafe_allow_html=True)
-    render_strategy_map(p1.get("plan_a"), p1.get("plan_b"), height=500)
+    if map_png:
+        st.markdown(png_bytes_to_base64_img_tag(map_png, "9 stratégia térképe", width_style="100%"), unsafe_allow_html=True)
+    else:
+        render_strategy_map(p1.get("plan_a"), p1.get("plan_b"), height=500)
     st.markdown("</div></div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
