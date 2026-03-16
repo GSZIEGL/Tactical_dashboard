@@ -3111,7 +3111,9 @@ h1,h2,h3,h4,p,li,span,label,div { color:#18212F; }
 .summary-page-title { margin:0 0 .35rem 0 !important; }
 .viz-page { break-inside: avoid; page-break-inside: avoid; }
 .viz-unit { break-inside: avoid; page-break-inside: avoid; }
-.viz-unit-radar .summary-chartbox, .viz-unit-bar .summary-chartbox, .viz-unit-map .summary-chartbox { min-height: 620px; }
+.viz-unit-radar .summary-chartbox { min-height: 560px; }
+.viz-unit-bar .summary-chartbox { min-height: 520px; }
+.viz-unit-map .summary-chartbox { min-height: 560px; }
 .summary-unit { break-inside: avoid; page-break-inside: avoid; margin-bottom: .4rem; }
 .summary-unit h4, .summary-unit h5, .summary-unit h3 { margin-bottom:.15rem !important; page-break-after: avoid; break-after: avoid; }
 .summary-chartbox { margin-top:0 !important; margin-bottom:4px !important; }
@@ -3119,7 +3121,7 @@ h1,h2,h3,h4,p,li,span,label,div { color:#18212F; }
 .summary-chartbox iframe { margin-top:-6px !important; margin-bottom:-8px !important; }
 .summary-chartbox.radar-box iframe { margin-top:-22px !important; margin-bottom:-10px !important; }
 .summary-chartbox.bar-box iframe { margin-top:-4px !important; margin-bottom:-6px !important; }
-.summary-chartbox.map-box iframe { margin-top:-8px !important; margin-bottom:-2px !important; }
+.summary-chartbox.map-box iframe { margin-top:-20px !important; margin-bottom:-10px !important; }
 .summary-compact-list { margin:0; padding-left:1rem; }
 .summary-compact-list li { margin:0 0 .18rem 0; line-height:1.22; }
 .summary-method { font-size:.92rem; line-height:1.35; color:#273142; margin-top:4px; }
@@ -3137,7 +3139,10 @@ h1,h2,h3,h4,p,li,span,label,div { color:#18212F; }
   .kte-hero, .summary-kpi .k { background:#FFFFFF !important; box-shadow:none !important; }
   .summary-page-break { break-before: page; page-break-before: always; }
   .summary-avoid-break, .summary-block, .summary-chartbox, .summary-viz-page, .summary-unit, .summary-section-wrap { break-inside: avoid; page-break-inside: avoid; }
-  .summary-chartbox iframe { margin-top:-12px !important; margin-bottom:-16px !important; }
+  .summary-chartbox iframe { margin-top:-8px !important; margin-bottom:-12px !important; }
+  .viz-unit-radar .summary-chartbox { min-height: 540px !important; }
+  .viz-unit-bar .summary-chartbox { min-height: 500px !important; }
+  .viz-unit-map .summary-chartbox { min-height: 540px !important; }
   h1, h2, h3, h4, h5 { break-after: avoid; page-break-after: avoid; }
 }
 </style>
@@ -3842,16 +3847,14 @@ def render_summary_page(package: Dict[str, object]):
     st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("<div class='summary-page-break summary-section-tight summary-section-wrap viz-page'>", unsafe_allow_html=True)
-    st.markdown("<h4 class='summary-page-title'>📊 Vizualizációk</h4>", unsafe_allow_html=True)
-    st.markdown("<div class='summary-unit viz-unit viz-unit-bar'><h5>Dimenziók összehasonlítása</h5><div class='summary-chartbox bar-box'>", unsafe_allow_html=True)
-    render_bar_chart(dims, height=560)
+    st.markdown("<div class='summary-unit viz-unit viz-unit-bar'><h5>📊 Dimenziók összehasonlítása</h5><div class='summary-chartbox bar-box'>", unsafe_allow_html=True)
+    render_bar_chart(dims, height=500)
     st.markdown("</div></div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("<div class='summary-page-break summary-section-tight summary-section-wrap viz-page'>", unsafe_allow_html=True)
-    st.markdown("<h4 class='summary-page-title'>📊 Vizualizációk</h4>", unsafe_allow_html=True)
-    st.markdown("<div class='summary-unit viz-unit viz-unit-map'><h5>9 stratégia térképe</h5><div class='summary-chartbox map-box'>", unsafe_allow_html=True)
-    render_strategy_map(p1.get("plan_a"), p1.get("plan_b"), height=540)
+    st.markdown("<div class='summary-unit viz-unit viz-unit-map'><h5>🧭 9 stratégia térképe</h5><div class='summary-note' style='margin-bottom:.35rem;'>A térkép a két csapat profilja alapján javasolt játékmodelleket mutatja a blokkmagasság és a játékstílus tengelyén.</div><div class='summary-chartbox map-box'>", unsafe_allow_html=True)
+    render_strategy_map(p1.get("plan_a"), p1.get("plan_b"), height=500)
     st.markdown("</div></div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -3872,10 +3875,15 @@ def render_summary_page(package: Dict[str, object]):
         st.subheader("Miért ezt a taktikát?")
         rec = [localize_summary_text(x) for x in ds.get("recommendation", [])]
         if not rec:
+            top_for = ds.get("top_for") or []
+            top_against = ds.get("top_against") or []
+            key_edge = top_for[0][0].lower() if top_for else "átmenetek"
+            risk_edge = top_against[0][0].lower() if top_against else "labdakihozatal"
             rec = [
-                f"A fő terv maradjon a(z) {localize_summary_text(label_strategy(p1.get('plan_a', 'KIE')).lower())}, és csak akkor válts a(z) {localize_summary_text(label_strategy(p1.get('plan_b', 'BAT')).lower())} felé, ha az ellenfél nyomás nélkül tud kijönni.",
-                "A blokk tartsa a középső szerkezetet, és a pressing indítása legyen triggerhez kötött, ne folyamatos.",
-                "Saját labdával a belső progresszió és a second ball kontrollja legyen az elsődleges edzői hangsúly.",
+                f"A fő javaslat azért a(z) {localize_summary_text(label_strategy(p1.get('plan_a', 'KIE')).lower())}, mert ebben a modellben a saját legnagyobb edge a(z) {key_edge} területén jelenik meg, miközben az ellenfél fő veszélye a(z) {risk_edge} oldalon kezelhető marad.",
+                f"A(z) {localize_summary_text(label_strategy(p1.get('plan_b', 'BAT')).lower())} inkább váltási opció: akkor érdemes elővenni, ha a meccs ritmusa megemelkedik, vagy az ellenfél túl kényelmesen tudja felhozni a labdát.",
+                "A blokk alaphelyzetben maradjon rendezett, a pressing pedig ne folyamatos legyen, hanem a kijelölt váltási jelekhez kötődjön.",
+                "Saját labdával az első cél ne a puszta labdabirtoklás legyen, hanem az, hogy a belső progresszió és a second ball kontroll révén a saját erősségeinket hozzuk játékba.",
             ]
         st.markdown(html_bullets(rec, limit=4), unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
