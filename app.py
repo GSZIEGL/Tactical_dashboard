@@ -2451,7 +2451,7 @@ def _pdf_draw_chart_panel(c, kind, png_bytes, x, y_bottom, w, h, dims=None, sele
             scale = min((w - 2 * pad_x) / iw, (h - 2 * pad_y) / ih)
             dw, dh = iw * scale, ih * scale
             dx = x + (w - dw) / 2
-            dy = y_bottom + h - dh - pad_y
+            dy = y_bottom + (h - dh) / 2
             c.drawImage(img, dx, dy, width=dw, height=dh, preserveAspectRatio=True, mask='auto')
             return
         except Exception:
@@ -2483,7 +2483,7 @@ def _pdf_draw_image_fit(c, png_bytes, x, y_bottom, w, h):
         scale = min(w / iw, h / ih)
         dw, dh = iw * scale, ih * scale
         dx = x + (w - dw) / 2
-        dy = y_bottom + h - dh
+        dy = y_bottom + (h - dh) / 2
         c.drawImage(img, dx, dy, width=dw, height=dh, preserveAspectRatio=True, mask='auto')
     except Exception:
         c.setFillColor(colors.HexColor("#7E6A98"))
@@ -2536,16 +2536,8 @@ def build_pdf_export_bytes(package: Dict[str, object]) -> bytes:
         ("Dimenzió-összehasonlítás", "bar", get_bar_chart_png_bytes(p1["dimensions"])),
         ("Stratégiai térkép", "strategy", get_strategy_map_png_bytes(p1["plan_a"], p1["plan_b"])),
     ]:
-        _pdf_draw_page_bg(c, width, height, "")
-        _pdf_draw_chart_panel(
-            c, kind, png,
-            20, 34,
-            width - 40, height - 148,
-            dims=p1["dimensions"], selected_a=p1["plan_a"], selected_b=p1["plan_b"]
-        )
-        c.setFillColor(colors.HexColor("#2F1D4A"))
-        c.setFont(PDF_FONT_BOLD_NAME, 13)
-        c.drawString(34, height - 108, pdf_safe_text(title))
+        _pdf_draw_page_bg(c, width, height, title)
+        _pdf_draw_chart_panel(c, kind, png, 42, 155, width - 84, height - 270, dims=p1["dimensions"], selected_a=p1["plan_a"], selected_b=p1["plan_b"])
         c.showPage()
 
     _pdf_draw_page_bg(c, width, height, "Matchup-kép és kulcspontok")
@@ -2930,126 +2922,37 @@ def compute_matchup_indices(team_metrics: Dict[str, float], opp_metrics: Dict[st
 
 
 def suggest_plans_from_model(team_scores: Dict[str, float], opp_scores: Dict[str, float], idx: Dict[str, float], opp_pdf_insights=None) -> Tuple[str, str, int]:
-    # matchup edges
     edge_press = team_scores["Letámadás"] - opp_scores["Labdakihozatal"]
     edge_trans = team_scores["Átmenetek"] - max(opp_scores["Letámadás"], opp_scores["Labdabirtoklás"])
     edge_control = (team_scores["Labdakihozatal"] + team_scores["Labdabirtoklás"]) - (opp_scores["Letámadás"] + opp_scores["Átmenetek"]) / 2
-    edge_attack = (team_scores["Támadó játék"] + team_scores["Pontrúgások"] + team_scores["Lövésprofil"]) / 3 - (opp_scores["Pontrúgások"] + opp_scores["Lövésprofil"] + opp_scores["Támadó játék"]) / 3
-    edge_setpiece = team_scores["Pontrúgások"] - opp_scores["Pontrúgások"]
-    edge_shot = team_scores["Lövésprofil"] - opp_scores["Lövésprofil"]
-    edge_build = team_scores["Labdakihozatal"] - opp_scores["Letámadás"]
-
-    opp_transition = (opp_scores["Átmenetek"] + opp_scores["Lövésprofil"]) / 2
-    opp_control = (opp_scores["Labdakihozatal"] + opp_scores["Labdabirtoklás"]) / 2
-    opp_press = opp_scores["Letámadás"]
-    team_control = (team_scores["Labdakihozatal"] + team_scores["Labdabirtoklás"]) / 2
-
-    # derived matchup terms
-    press_window = idx["BUVI"] - 0.72 * idx["PRS2"] + 0.35 * edge_press
-    control_window = edge_control + 0.45 * edge_build - 0.62 * idx["TTS"] - 0.40 * max(0.0, opp_transition - 6.4)
-    transition_window = edge_trans + 0.22 * idx["BUVI"] + 0.18 * edge_attack - 0.22 * opp_press
-    low_block_window = 0.55 * idx["TTS"] + 0.30 * max(0.0, opp_transition - team_control) + 0.25 * edge_trans - 0.35 * edge_control
-
-    # infer opponent archetype directly from current opponent profile
-    if opp_scores["Átmenetek"] >= 7.0 and opp_scores["Támadó játék"] >= 6.4:
-        archetype = "transition"
-    elif opp_scores["Labdakihozatal"] >= 7.0 and opp_scores["Labdabirtoklás"] >= 6.5:
-        archetype = "build"
-    elif opp_scores["Letámadás"] >= 7.0:
-        archetype = "press"
-    elif opp_scores["Labdabirtoklás"] <= 5.0 and opp_scores["Támadó játék"] <= 5.5:
-        archetype = "reactive"
-    elif opp_scores["Támadó játék"] >= 7.0 and opp_scores["Átmenetek"] < 6.0:
-        archetype = "positional"
-    else:
-        archetype = "mixed"
+    edge_attack = (team_scores["Támadó játék"] + team_scores["Pontrúgások"]) - (opp_scores["Pontrúgások"] + opp_scores["Lövésprofil"]) / 2
 
     score_map = {
-        "PRS": 1.30 * press_window + 0.85 * transition_window + 0.20 * edge_setpiece - 0.28 * idx["TTS"],
-        "MLT": 1.48 * press_window + 0.30 * edge_press - 0.52 * idx["TTS"] - 0.20 * opp_transition,
-        "BAT": 1.08 * transition_window + 0.52 * edge_press + 0.20 * edge_setpiece + 0.10 * edge_attack,
-        "DOM": 1.18 * control_window + 0.45 * edge_attack + 0.20 * edge_setpiece - 0.32 * opp_transition,
-        "POZ": 1.08 * control_window + 0.62 * edge_attack + 0.22 * edge_build - 0.26 * idx["TTS"],
-        "KIE": 0.62 * control_window + 0.62 * transition_window + 0.22 * edge_press + 0.08 * edge_setpiece,
-        "LAB": 0.88 * control_window - 0.22 * idx["TTS"] - 0.18 * edge_press + 0.15 * edge_build,
-        "GAT": 1.15 * transition_window + 0.52 * press_window + 0.15 * edge_shot,
-        "KON": 1.12 * low_block_window + 0.20 * edge_shot + 0.12 * edge_setpiece,
+        "PRS": 0.9*edge_press + 0.7*edge_trans + 0.45*idx["BUVI"] - 0.35*idx["PRS2"],
+        "MLT": 1.1*edge_press + 0.8*idx["BUVI"] - 0.55*idx["PRS2"],
+        "BAT": 0.8*edge_trans + 0.5*edge_press + 0.35*idx["TTS"] + 0.2*edge_attack,
+        "DOM": 0.95*edge_control + 0.45*edge_attack - 0.35*idx["TTS"] + 0.1*idx["PRS2"],
+        "POZ": 0.85*edge_control + 0.55*edge_attack + 0.15*idx["PRS2"],
+        "KIE": 0.55*edge_control + 0.55*edge_trans + 0.15*edge_press,
+        "LAB": 0.65*edge_control - 0.25*idx["TTS"] - 0.2*edge_press,
+        "GAT": 0.95*edge_trans + 0.35*idx["BUVI"] + 0.1*edge_press,
+        "KON": 0.55*idx["TTS"] - 0.4*edge_control + 0.35*edge_trans,
     }
-
-    # archetype-specific reweighting to separate opponents more clearly
-    if archetype == "transition":
-        score_map["BAT"] += 1.15
-        score_map["PRS"] += 0.75
-        score_map["GAT"] += 0.55
-        score_map["KON"] += 0.40
-        score_map["POZ"] -= 1.05
-        score_map["DOM"] -= 0.85
-        score_map["LAB"] -= 0.55
-    elif archetype == "build":
-        score_map["PRS"] += 1.10
-        score_map["MLT"] += 0.85
-        score_map["BAT"] += 0.45
-        score_map["DOM"] -= 0.35
-        score_map["KON"] -= 0.45
-    elif archetype == "press":
-        score_map["KIE"] += 0.80
-        score_map["POZ"] += 0.45
-        score_map["LAB"] += 0.35
-        score_map["MLT"] -= 0.50
-    elif archetype == "reactive":
-        score_map["POZ"] += 1.05
-        score_map["DOM"] += 0.90
-        score_map["LAB"] += 0.60
-        score_map["GAT"] -= 0.35
-        score_map["KON"] -= 0.55
-    elif archetype == "positional":
-        score_map["PRS"] += 0.70
-        score_map["BAT"] += 0.55
-        score_map["KIE"] += 0.30
-        score_map["POZ"] -= 0.40
-        score_map["DOM"] -= 0.25
-
-    # tactical incompatibility penalties
-    if idx["PRS2"] >= 7.2:
-        score_map["MLT"] -= 0.80
-        score_map["PRS"] -= 0.55
-    if idx["TTS"] >= 7.0:
-        score_map["POZ"] -= 0.95
-        score_map["DOM"] -= 0.85
-        score_map["LAB"] -= 0.55
-        score_map["BAT"] += 0.35
-        score_map["KIE"] += 0.25
-    if edge_build >= 1.0 and edge_control >= 0.8:
-        score_map["POZ"] += 0.60
-        score_map["DOM"] += 0.45
-    if edge_press >= 0.8 and idx["BUVI"] >= 6.2:
-        score_map["PRS"] += 0.55
-        score_map["MLT"] += 0.35
-    if edge_trans >= 0.9:
-        score_map["BAT"] += 0.40
-        score_map["GAT"] += 0.35
-    if edge_setpiece >= 1.0:
-        score_map["BAT"] += 0.20
-        score_map["DOM"] += 0.18
-        score_map["KON"] += 0.15
 
     if opp_pdf_insights and opp_pdf_insights.get("formation"):
         f = opp_pdf_insights.get("formation", "")
         if f.startswith("3-"):
-            score_map["PRS"] += 0.25
-            score_map["BAT"] += 0.25
+            score_map["PRS"] += 0.2
+            score_map["BAT"] += 0.2
         if f.startswith("4-2-3"):
-            score_map["POZ"] += 0.18
-            score_map["DOM"] += 0.12
-        if f.startswith("4-4-2"):
-            score_map["BAT"] += 0.18
-            score_map["KON"] += 0.12
+            score_map["DOM"] += 0.15
+            score_map["POZ"] += 0.15
 
     ordered = sorted(score_map.items(), key=lambda x: x[1], reverse=True)
     plan_a = ordered[0][0]
-    plan_b = next(code for code, score in ordered[1:] if code != plan_a and abs(score_map[plan_a] - score) >= 0.18)
-    gap = score_map[plan_a] - score_map[plan_b]
-    split = 63 if gap >= 1.75 else 60 if gap >= 1.0 else 57 if gap >= 0.45 else 55
+    plan_b = next(code for code, _ in ordered[1:] if code != plan_a)
+    gap = ordered[0][1] - ordered[1][1]
+    split = 60 if gap >= 1.25 else 57 if gap >= 0.65 else 55
     return plan_a, plan_b, split
 
 
