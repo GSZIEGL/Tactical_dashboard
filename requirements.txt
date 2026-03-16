@@ -4,3 +4,4 @@ altair
 pdfplumber
 reportlab
 openpyxl
+python-docx
