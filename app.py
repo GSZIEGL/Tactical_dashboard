@@ -3121,12 +3121,13 @@ h1,h2,h3,h4,p,li,span,label,div { color:#18212F; }
 .summary-chartbox iframe { margin-top:-6px !important; margin-bottom:-8px !important; }
 .summary-chartbox.radar-box iframe { margin-top:-22px !important; margin-bottom:-10px !important; }
 .summary-chartbox.bar-box iframe { margin-top:-4px !important; margin-bottom:-6px !important; }
-.summary-chartbox.map-box iframe { margin-top:-20px !important; margin-bottom:-10px !important; }
+.summary-chartbox.map-box iframe { margin-top:-8px !important; margin-bottom:-8px !important; }
 .summary-chartbox svg { width:100% !important; height:auto !important; display:block; }
 .summary-chartbox .svg-wrap { width:100%; overflow:hidden; }
 .summary-chartbox.radar-box .svg-wrap { margin-top:-8px; }
 .summary-chartbox.bar-box .svg-wrap { margin-top:-4px; }
-.summary-chartbox.map-box .svg-wrap { margin-top:-8px; }
+.summary-chartbox.map-box .svg-wrap { margin-top:0; }
+.summary-chartbox.map-box svg { width:98% !important; margin:0 auto; display:block; }
 .summary-compact-list { margin:0; padding-left:1rem; }
 .summary-compact-list li { margin:0 0 .18rem 0; line-height:1.22; }
 .summary-method { font-size:.92rem; line-height:1.35; color:#273142; margin-top:4px; }
@@ -3885,6 +3886,9 @@ def render_summary_page(package: Dict[str, object]):
         st.markdown(html_bullets(rec, limit=4), unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("<div class='summary-page-break summary-section-tight summary-section-wrap'>", unsafe_allow_html=True)
     st.markdown("<div class='summary-unit'>", unsafe_allow_html=True)
     st.subheader("Negyedórás várható lefolyás")
     st.markdown(html_bullets(quarter_flow, empty_text="Nincs becsült negyedórás meccslefolyás."), unsafe_allow_html=True)
