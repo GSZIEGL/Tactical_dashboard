@@ -5,6 +5,8 @@ import re
 import unicodedata
 import base64
 import hashlib
+import zipfile
+from xml.sax.saxutils import escape
 from pathlib import Path
 from typing import Dict, Optional, List, Tuple
 
@@ -2602,10 +2604,118 @@ def build_pdf_export_bytes(package: Dict[str, object]) -> bytes:
 
 
 
+def _simple_docx_paragraphs(package: Dict[str, object]) -> List[Tuple[str, str]]:
+    p1 = package["page_1_onepager"]
+    p3 = package["page_3_tactical_overview"]
+    ds = package.get("decision_support", {}) or {}
+    danger = summarize_danger_players(p3.get("key_player_threats", {}))
+    quarter_flow = build_quarter_flow(package)
+    items: List[Tuple[str, str]] = []
+    items.append(("title", "Taktikai döntéselőkészítő"))
+    items.append(("subtitle", f"KTE vs {p1.get('opponent_name') or 'ellenfél'}\nKészítette: Sziegl Gábor"))
+    items.append(("heading", "Vezetői összegző"))
+    for row in [
+        f"A terv: {label_strategy(str(p1['plan_a']))}",
+        f"B terv: {label_strategy(str(p1['plan_b']))}",
+        f"Arány: {p1['plan_split']}",
+    ]:
+        items.append(("bullet", row))
+    items.append(("heading", "Teljes konklúzió"))
+    for item in build_full_conclusion(package):
+        items.append(("bullet", localize_summary_text(item)))
+    items.append(("heading", "3 kulcs és kockázatok"))
+    for item in p1.get('three_keys', [])[:3]:
+        items.append(("bullet", f"Kulcs: {localize_summary_text(item)}"))
+    for item in p1.get('risks', [])[:3]:
+        items.append(("bullet", f"Kockázat: {localize_summary_text(item)}"))
+    for item in danger[:2]:
+        items.append(("bullet", f"Ellenfél: {localize_summary_text(item)}"))
+    items.append(("pagebreak", ""))
+    for label in ["[7 dimenziós profil diagram]", "[Dimenziók összehasonlítása diagram]", "[9 stratégia térképe diagram]"]:
+        items.append(("heading", label))
+    items.append(("pagebreak", ""))
+    items.append(("heading", "Matchup-olvasat"))
+    for item in ds.get('matchup_notes', [])[:4]:
+        items.append(("bullet", localize_summary_text(item)))
+    items.append(("heading", "Miért ezt a taktikát?"))
+    why_lines = ds.get('recommendation', [])
+    if not why_lines:
+        why_lines = [localize_summary_text(x) for x in build_full_conclusion(package)[:3]]
+    for item in why_lines[:5]:
+        items.append(("bullet", localize_summary_text(item)))
+    items.append(("heading", "Várható meccsdinamika"))
+    for item in build_detailed_match_dynamics(package)[:6]:
+        items.append(("bullet", localize_summary_text(item)))
+    items.append(("heading", "Negyedórás várható lefolyás"))
+    for item in quarter_flow[:6]:
+        items.append(("bullet", localize_summary_text(item)))
+    items.append(("pagebreak", ""))
+    items.append(("heading", "Módszertan röviden"))
+    items.append(("para", localize_summary_text(get_methodology_summary())))
+    if not DOCX_AVAILABLE:
+        items.append(("para", "Megjegyzés: ez a Word export a beépített DOCX motorral készült, ezért a diagramok helye jelölve van; python-docx telepítése esetén a diagramok is automatikusan beágyazódnak."))
+    return items
+
+
+def _build_minimal_docx_bytes(package: Dict[str, object]) -> bytes:
+    paragraphs = _simple_docx_paragraphs(package)
+    body_parts = []
+    for kind, value in paragraphs:
+        if kind == "pagebreak":
+            body_parts.append('<w:p><w:r><w:br w:type="page"/></w:r></w:p>')
+            continue
+        txt = escape(pdf_safe_text(value))
+        if kind == "title":
+            body_parts.append(f'<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="32"/></w:rPr><w:t>{txt}</w:t></w:r></w:p>')
+        elif kind == "subtitle":
+            txt = txt.replace('\n', '</w:t><w:br/><w:t>')
+            body_parts.append(f'<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:sz w:val="22"/></w:rPr><w:t>{txt}</w:t></w:r></w:p>')
+        elif kind == "heading":
+            body_parts.append(f'<w:p><w:pPr><w:spacing w:before="240" w:after="80"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="26"/></w:rPr><w:t>{txt}</w:t></w:r></w:p>')
+        elif kind == "bullet":
+            body_parts.append(f'<w:p><w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr><w:r><w:t xml:space="preserve">• {txt}</w:t></w:r></w:p>')
+        else:
+            body_parts.append(f'<w:p><w:r><w:t>{txt}</w:t></w:r></w:p>')
+    document_xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<w:document xmlns:wpc="http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas" '
+        'xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" '
+        'xmlns:o="urn:schemas-microsoft-com:office:office" '
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
+        'xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" '
+        'xmlns:v="urn:schemas-microsoft-com:vml" '
+        'xmlns:wp14="http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing" '
+        'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" '
+        'xmlns:w10="urn:schemas-microsoft-com:office:word" '
+        'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+        'xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" '
+        'xmlns:wpg="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup" '
+        'xmlns:wpi="http://schemas.microsoft.com/office/word/2010/wordprocessingInk" '
+        'xmlns:wne="http://schemas.microsoft.com/office/word/2006/wordml" '
+        'xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" mc:Ignorable="w14 wp14">'
+        '<w:body>' + ''.join(body_parts) +
+        '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="720" w:right="720" w:bottom="720" w:left="900" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr>'
+        '</w:body></w:document>'
+    )
+    content_types = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>'
+    rels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>'
+    app = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><Application>OpenAI</Application></Properties>'
+    core = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>Taktikai döntéselőkészítő</dc:title><dc:creator>OpenAI</dc:creator></cp:coreProperties>'
+    word_rels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>'
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr('[Content_Types].xml', content_types)
+        zf.writestr('_rels/.rels', rels)
+        zf.writestr('docProps/app.xml', app)
+        zf.writestr('docProps/core.xml', core)
+        zf.writestr('word/document.xml', document_xml)
+        zf.writestr('word/_rels/document.xml.rels', word_rels)
+    return buf.getvalue()
+
 
 def build_word_export_bytes(package: Dict[str, object]) -> bytes:
     if not DOCX_AVAILABLE:
-        return build_markdown_export(package).encode("utf-8")
+        return _build_minimal_docx_bytes(package)
 
     p1 = package["page_1_onepager"]
     p3 = package["page_3_tactical_overview"]
@@ -4337,7 +4447,7 @@ if step == "4. Export Prep":
         if not REPORTLAB_AVAILABLE:
             st.warning("A reportlab nincs telepítve, ezért a PDF gomb szöveges fallback fájlt ad vissza. A teljes, diagramokat is tartalmazó export ilyenkor a HTML fájlban látszik.")
         if not DOCX_AVAILABLE:
-            st.warning("A python-docx nincs telepítve, ezért a Word gomb szöveges fallback fájlt ad vissza.")
+            st.info("A python-docx nincs telepítve, ezért a Word export a beépített DOCX motorral készül. A dokumentum szerkeszthető marad, de a diagramok helye jelölve lesz.")
 
         coach_controls = {
             "primary_model": st.session_state["coach_primary_model"],
@@ -4418,8 +4528,8 @@ if step == "4. Export Prep":
                 st.download_button(
                     "Word briefing letöltése",
                     data=word_export,
-                    file_name="briefing_export_package.docx" if DOCX_AVAILABLE else "briefing_export_package.txt",
-                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document" if DOCX_AVAILABLE else "text/plain",
+                    file_name="briefing_export_package.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 )
             with dl2:
                 st.markdown("#### Control státusz")
