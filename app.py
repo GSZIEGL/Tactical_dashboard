@@ -60,6 +60,7 @@ except Exception:
     CAIROSVG_AVAILABLE = False
 
 st.set_page_config(page_title="Tactical Briefing Engine", layout="wide")
+APP_VERSION = "TACTICAL_UNIVERSAL_PDF_EXCEL_V1_2026_06_16"
 
 PDF_FONT_NAME = "Helvetica"
 PDF_FONT_BOLD_NAME = "Helvetica-Bold"
@@ -453,39 +454,35 @@ def render_strategy_map(selected_a: Optional[str] = None, selected_b: Optional[s
 # =========================================================
 
 METRIC_ALIASES = {
-    "ppda": ["ppda"],
+    "ppda": ["ppda", "passes allowed per defensive action", "passz engedett védekező akciónként"],
     "pressing_success_pct": [
-        "team pressing successful, %",
-        "pressing successful",
-        "successful pressing",
-        "pressing success",
-        "pressing %",
+        "team pressing successful, %", "pressing successful", "successful pressing", "pressing success",
+        "pressing %", "high press success", "pressed sequences", "nyomás sikeres", "sikeres letámadás",
+        "letámadás sikeresség", "presszing sikeresség", "visszatámadás sikeresség", "counterpress success",
     ],
     "passes_accurate_pct": [
-        "passes accurate, %",
-        "passes accurate",
-        "accurate passes %",
-        "pass accuracy",
-        "passes / accurate",
+        "passes accurate, %", "passes accurate", "accurate passes %", "pass accuracy", "passes / accurate",
+        "passing accuracy", "successful passes", "pass completion", "passzpontosság", "pontos passzok",
+        "átadáspontosság", "sikeres passz", "passz sikeresség",
     ],
     "entries_box": [
-        "entrances to the opponent's box",
-        "entrances to opponents box",
-        "entries into box",
-        "box entries",
-        "penalty box entries",
+        "entrances to the opponent's box", "entrances to opponents box", "entries into box", "box entries",
+        "penalty box entries", "touches in box", "opponent box entries", "box entry", "tizenhatosba belépés",
+        "büntetőterületre belépés", "ellenfél tizenhatosába", "boxba belépés", "16-osba belépés",
     ],
-    "key_passes": ["key passes", "key pass"],
-    "corners": ["corners", "corner kicks"],
+    "key_passes": [
+        "key passes", "key pass", "shot assists", "assist to shot", "chances created", "chance creation",
+        "kulcspassz", "helyzetkialakítás", "lövést előkészítő passz", "gólpassz előtti passz",
+    ],
+    "corners": ["corners", "corner kicks", "szögletek", "szöglet", "corner"],
     "possession_pct": [
-        "ball possession, %",
-        "ball possession",
-        "possession %",
-        "ball possession %",
+        "ball possession, %", "ball possession", "possession %", "ball possession %", "possession",
+        "labdabirtoklás", "labdabirtoklási arány", "birtoklás", "labdabirtoklás %",
     ],
-    "shots": ["shots", "total shots"],
-    "xg": ["xg", "expected goals"],
+    "shots": ["shots", "total shots", "shot", "attempts", "lövés", "lövések", "kapura lövés", "összes lövés"],
+    "xg": ["xg", "expected goals", "várható gól", "várható gólok", "xG"],
 }
+
 
 
 # =========================================================
@@ -493,16 +490,17 @@ METRIC_ALIASES = {
 # =========================================================
 
 PLAYER_COL_ALIASES = {
-    "player": ["player"],
-    "position": ["position"],
-    "minutes_played": ["minutes played"],
-    "passes": ["passes"],
-    "progressive_passes": ["progressive passes"],
-    "key_passes": ["key passes"],
-    "interceptions": ["interceptions"],
-    "defensive_challenges": ["defensive challenges"],
-    "def_challenges_won_pct": ["defensive challenges won, %", "defensive challenges won %"],
+    "player": ["player", "player name", "name", "athlete", "játékos", "játékos neve", "név", "futballista"],
+    "position": ["position", "pos", "role", "poszt", "pozíció", "szerepkör"],
+    "minutes_played": ["minutes played", "minutes", "mins", "played", "játékperc", "percek", "játszott perc"],
+    "passes": ["passes", "pass", "passzok", "passz", "átadások"],
+    "progressive_passes": ["progressive passes", "progressive pass", "progresszív passz", "előrehaladó passz"],
+    "key_passes": ["key passes", "key pass", "shot assists", "kulcspassz", "helyzetkialakítás", "lövést előkészítő"],
+    "interceptions": ["interceptions", "interception", "labdaszerzés", "megelőző szerelés", "közbelépés"],
+    "defensive_challenges": ["defensive challenges", "defensive duels", "defensive duel", "védekező párharc", "védő párharc", "párharc"],
+    "def_challenges_won_pct": ["defensive challenges won, %", "defensive challenges won %", "defensive duels won, %", "védekező párharc nyert", "védő párharc nyert"],
 }
+
 
 
 # =========================================================
@@ -634,9 +632,16 @@ def parse_excel_metrics_with_debug(file_bytes: bytes) -> Tuple[Dict[str, float],
             }
         )
 
-        if "main statistics" in sheet_name:
-            sheet_metrics, debug_rows, match_count = parse_main_statistics_sheet(df)
-            metrics.update(sheet_metrics)
+        # SportsBase: "Main statistics" az elsődleges, de univerzális módban más sheetet is megpróbálunk,
+        # ha van Total sor és értelmezhető fejléc.
+        if "main statistics" in sheet_name or total_row_idx is not None:
+            sheet_metrics, debug_rows, local_mc = parse_main_statistics_sheet(df)
+            # Ne írjuk felül nullákkal a már megtalált értékeket.
+            for k, v in sheet_metrics.items():
+                if v not in [None, 0, 0.0] or k not in metrics:
+                    metrics[k] = v
+            if local_mc and local_mc > match_count:
+                match_count = local_mc
 
             for row in debug_rows:
                 row["sheet"] = sheet
@@ -740,23 +745,38 @@ def parse_player_excel(file_bytes: bytes) -> Dict[str, pd.DataFrame]:
 # PDF PARSER - FINOMHANGOLT
 # =========================================================
 
-TARGET_PAGES = [1, 2, 3, 4, 6]
+TARGET_PAGES = None  # Universal mód: alapból minden oldalt olvasunk, nem csak SportsBase céloldalakat.
 
 
 @st.cache_data(show_spinner=False)
-def extract_pdf_pages(file_bytes: bytes, target_pages: Tuple[int, ...] = tuple(TARGET_PAGES), max_pages: int = 40) -> List[dict]:
+def extract_pdf_pages(file_bytes: bytes, target_pages: Optional[Tuple[int, ...]] = None, max_pages: int = 80) -> List[dict]:
+    """Univerzális PDF olvasó.
+    - Ha target_pages=None: minden oldalból próbál szöveget nyerni.
+    - Ha target_pages megadott: csak azokat az oldalszámokat használja 0-index alapon.
+    """
     out = []
     try:
-        with pdfplumber.open(file_bytes) as pdf:
+        with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
             total_pages = min(len(pdf.pages), max_pages)
             for p in range(total_pages):
-                if p not in target_pages:
+                if target_pages is not None and p not in target_pages:
                     continue
-                txt = pdf.pages[p].extract_text() or ""
+                txt = pdf.pages[p].extract_text(x_tolerance=1, y_tolerance=3) or ""
                 if txt.strip():
                     out.append({"page_index": p, "page_number": p + 1, "text": txt})
     except Exception:
-        return []
+        # régi kód kompatibilitás: néhány pdfplumber verzió file-like objektumot vár
+        try:
+            with pdfplumber.open(file_bytes) as pdf:
+                total_pages = min(len(pdf.pages), max_pages)
+                for p in range(total_pages):
+                    if target_pages is not None and p not in target_pages:
+                        continue
+                    txt = pdf.pages[p].extract_text(x_tolerance=1, y_tolerance=3) or ""
+                    if txt.strip():
+                        out.append({"page_index": p, "page_number": p + 1, "text": txt})
+        except Exception:
+            return []
     return out
 
 
@@ -772,12 +792,247 @@ def combine_targeted_pdf_texts(files: List[object]) -> Tuple[str, List[dict]]:
     return "\n\n".join(texts), page_blocks
 
 
+
+# =========================================================
+# UNIVERSAL TACTICAL PDF TAGGER - HU/EN
+# =========================================================
+
+TACTICAL_TOPIC_TAGS = {
+    "formation": {
+        "label_hu": "Formáció / alapfelállás",
+        "keywords": [
+            "formation", "shape", "system", "line-up", "lineup", "starting eleven", "starting xi", "structure",
+            "formáció", "felállás", "alapfelállás", "játékrendszer", "szerkezet", "kezdőcsapat", "kezdő tizenegy",
+            "4-4-2", "4-2-3-1", "4-3-3", "3-5-2", "3-4-3", "5-3-2", "5-4-1",
+        ],
+    },
+    "build_up": {
+        "label_hu": "Labdakihozatal / támadásépítés",
+        "keywords": [
+            "build-up", "build up", "buildout", "first phase", "second phase", "goal kick", "short goal kick",
+            "deep build", "progression", "progressive pass", "progressive passes", "progressive carry", "third man",
+            "centre back", "center back", "fullback", "pivot", "six", "number 6", "half-space", "switch of play",
+            "labdakihozatal", "támadásépítés", "építkezés", "első fázis", "második fázis", "kirúgás",
+            "rövid kirúgás", "progresszió", "progresszív passz", "progresszív labdavezetés", "harmadik ember",
+            "belső védő", "szélső védő", "hatossal", "6-os", "félterület", "oldalváltás",
+        ],
+    },
+    "direct_play": {
+        "label_hu": "Direkt játék / hosszú labda",
+        "keywords": [
+            "direct play", "long ball", "long pass", "second ball", "aerial duel", "target man", "flick-on",
+            "vertical", "early forward", "long distribution", "direct attack", "route one",
+            "direkt játék", "hosszú labda", "hosszú passz", "második labda", "felívelés", "fejpárbaj",
+            "céljátékos", "lecsorgó", "vertikális", "korai előrejáték", "direkt támadás",
+        ],
+    },
+    "pressing": {
+        "label_hu": "Letámadás / presszing",
+        "keywords": [
+            "press", "pressing", "high press", "mid press", "low press", "counterpress", "counter-press",
+            "ppda", "pressure", "pressing trigger", "trap", "press trap", "forced turnover", "high recovery",
+            "challenge intensity", "defensive actions", "intensity", "aggressive press",
+            "letámadás", "presszing", "magas letámadás", "középső presszing", "visszatámadás", "nyomás",
+            "presszing trigger", "trigger", "csapda", "pressingcsapda", "kikényszerített labdavesztés",
+            "magas labdaszerzés", "védekező akció", "intenzitás", "agresszív letámadás",
+        ],
+    },
+    "defensive_block": {
+        "label_hu": "Védekezési blokk / blokkmagasság",
+        "keywords": [
+            "low block", "mid block", "middle block", "high block", "defensive block", "compact", "compactness",
+            "defensive line", "back line", "line height", "block height", "deep defending", "drop", "retreat",
+            "mély blokk", "középső blokk", "magas blokk", "védekezési blokk", "kompakt", "kompaktság",
+            "védelmi vonal", "védősor", "blokkmagasság", "mély védekezés", "visszazár", "visszarendeződés",
+        ],
+    },
+    "transition_attack": {
+        "label_hu": "Támadó átmenet / kontrák",
+        "keywords": [
+            "transition", "attacking transition", "offensive transition", "counterattack", "counter attack", "counter-attacks",
+            "fast attack", "quick attack", "break", "breakaway", "after regain", "after winning", "regain and go",
+            "átmenet", "támadó átmenet", "kontra", "kontratámadás", "gyors támadás", "gyors átmenet",
+            "labdaszerzés után", "labdanyerés után", "visszaszerzés után", "indítás", "megindulás",
+        ],
+    },
+    "transition_defense": {
+        "label_hu": "Védekező átmenet / rest defense",
+        "keywords": [
+            "defensive transition", "after losing", "after loss", "rest defense", "counter attack prevention",
+            "counter prevention", "defend transition", "negative transition", "cover behind", "protection behind",
+            "védekező átmenet", "labdavesztés után", "rest defense", "kontrák elleni védekezés",
+            "átmeneti védekezés", "negatív átmenet", "biztosítás", "mögöttes biztosítás", "visszarendeződés",
+        ],
+    },
+    "chance_creation": {
+        "label_hu": "Helyzetkialakítás / támadóharmad",
+        "keywords": [
+            "chance creation", "key pass", "shot assist", "box entry", "penalty area", "final third", "final-third",
+            "through ball", "cutback", "cross", "low cross", "deep cross", "half-space cross", "xg", "expected goals",
+            "helyzetkialakítás", "kulcspassz", "lövést előkészítő", "box entry", "tizenhatos", "büntetőterület",
+            "támadóharmad", "mélységi passz", "visszagurítás", "beadás", "lapos beadás", "xg", "várható gól",
+        ],
+    },
+    "wide_play": {
+        "label_hu": "Szélső játék / oldali dominancia",
+        "keywords": [
+            "wide play", "wing", "flank", "left side", "right side", "overlap", "underlap", "fullback", "wingback",
+            "crossing", "side dominance", "touchline", "wide overload", "flank overload",
+            "szélső játék", "szél", "oldal", "bal oldal", "jobb oldal", "átfedés", "aláfutás", "szélső védő",
+            "wingback", "beadás", "oldali dominancia", "oldalvonal", "oldali túlterhelés",
+        ],
+    },
+    "central_play": {
+        "label_hu": "Középső játék / félterületek",
+        "keywords": [
+            "central", "middle", "half-space", "half space", "between the lines", "pocket", "zone 14", "inside channel",
+            "central overload", "interior", "attacking midfielder", "number 10",
+            "középen", "középső", "félterület", "félterületek", "vonalak között", "zseb", "14-es zóna",
+            "belső csatorna", "középső túlterhelés", "belső középpályás", "10-es",
+        ],
+    },
+    "set_pieces": {
+        "label_hu": "Pontrúgások",
+        "keywords": [
+            "set piece", "set pieces", "corner", "corner kick", "free kick", "throw-in", "throw in", "penalty",
+            "attacking corner", "defensive corner", "near post", "far post", "second ball", "aerial", "header",
+            "pontrúgás", "pontrúgások", "szöglet", "szabadrúgás", "bedobás", "büntető", "támadó szöglet",
+            "védekező szöglet", "rövid oldal", "hosszú oldal", "második labda", "fejpárbaj", "fejes",
+        ],
+    },
+    "key_players": {
+        "label_hu": "Kulcsjátékosok",
+        "keywords": [
+            "key player", "danger man", "main threat", "top scorer", "creator", "playmaker", "progressor", "target man",
+            "dribbler", "1v1", "one-v-one", "finisher", "captain", "most dangerous",
+            "kulcsjátékos", "veszélyes játékos", "fő veszély", "gólkirály", "kreatív játékos", "irányító",
+            "progresszor", "céljátékos", "cselező", "egy az egy", "befejező", "csapatkapitány", "legveszélyesebb",
+        ],
+    },
+    "weakness_risk": {
+        "label_hu": "Gyengeségek / kockázatok",
+        "keywords": [
+            "weakness", "weaknesses", "risk", "risks", "vulnerable", "vulnerability", "exposed", "space behind",
+            "gap", "mistake", "error", "turnover", "lost balls", "losses", "danger", "threat", "problem",
+            "gyengeség", "gyengeségek", "kockázat", "sebezhető", "sebezhetőség", "nyitott terület", "mögötti terület",
+            "rés", "hiba", "labdavesztés", "elvesztett labda", "veszély", "fenyegetés", "probléma",
+        ],
+    },
+    "strength": {
+        "label_hu": "Erősségek",
+        "keywords": [
+            "strength", "strengths", "strong", "advantage", "edge", "dominant", "effective", "efficient",
+            "erősség", "erősségek", "erős", "előny", "domináns", "hatékony", "kiemelkedő",
+        ],
+    },
+    "goalkeeper": {
+        "label_hu": "Kapus szerepe",
+        "keywords": [
+            "goalkeeper", "keeper", "gk", "sweeper keeper", "distribution", "long kick", "short pass from gk",
+            "kapus", "hálóőr", "kapusjáték", "kapus kirúgás", "kapus passz", "hosszú kirúgás", "rövid kirúgás",
+        ],
+    },
+    "match_dynamics": {
+        "label_hu": "Meccsdinamika / fázisok",
+        "keywords": [
+            "first half", "second half", "opening phase", "late phase", "last 15", "tempo", "rhythm", "momentum",
+            "game state", "when leading", "when trailing", "after goal", "minutes", "phase",
+            "első félidő", "második félidő", "kezdő fázis", "végjáték", "utolsó 15", "tempó", "ritmus",
+            "momentum", "meccsállapot", "vezetésnél", "hátrányban", "gól után", "percek", "fázis",
+        ],
+    },
+    "recommendation": {
+        "label_hu": "Javaslat / meccsterv",
+        "keywords": [
+            "recommendation", "recommend", "should", "we should", "game plan", "match plan", "plan a", "plan b",
+            "solution", "exploit", "avoid", "focus", "priority", "target", "press here", "attack here",
+            "javaslat", "ajánlás", "meccsterv", "mérkőzésterv", "terv a", "terv b", "megoldás",
+            "kihasználni", "elkerülni", "fókusz", "prioritás", "célpont", "itt presszing", "itt támadni",
+        ],
+    },
+}
+
+TACTICAL_TOPIC_ORDER = [
+    "formation", "build_up", "direct_play", "pressing", "defensive_block", "transition_attack",
+    "transition_defense", "chance_creation", "wide_play", "central_play", "set_pieces", "key_players",
+    "weakness_risk", "strength", "goalkeeper", "match_dynamics", "recommendation",
+]
+
+
+def _norm_for_tagging(text: object) -> str:
+    s = unicodedata.normalize("NFKD", str(text or "").lower())
+    s = "".join(ch for ch in s if not unicodedata.combining(ch))
+    s = s.replace("–", "-").replace("—", "-")
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def tactical_keyword_hits(text: str, keywords: List[str]) -> int:
+    norm = _norm_for_tagging(text)
+    hits = 0
+    for kw in keywords:
+        k = _norm_for_tagging(kw)
+        if k and k in norm:
+            hits += 1
+    return hits
+
+
+def extract_context_lines_by_topic(text: str, topic_key: str, limit: int = 8, context_radius: int = 1) -> List[str]:
+    cfg = TACTICAL_TOPIC_TAGS.get(topic_key, {})
+    keywords = cfg.get("keywords", [])
+    lines = [x.strip() for x in str(text or "").splitlines() if x.strip()]
+    selected = []
+    for i, line in enumerate(lines):
+        if tactical_keyword_hits(line, keywords) > 0:
+            start = max(0, i - context_radius)
+            end = min(len(lines), i + context_radius + 1)
+            for j in range(start, end):
+                if len(lines[j]) >= 4:
+                    selected.append(lines[j])
+        if len(unique_keep_order(selected)) >= limit:
+            break
+    return unique_keep_order(selected)[:limit]
+
+
+def detect_tactical_topics(text: str) -> Tuple[Dict[str, dict], List[str]]:
+    rows = {}
+    for key in TACTICAL_TOPIC_ORDER:
+        cfg = TACTICAL_TOPIC_TAGS[key]
+        lines = extract_context_lines_by_topic(text, key, limit=10, context_radius=0)
+        hit_count = sum(tactical_keyword_hits(line, cfg["keywords"]) for line in lines)
+        rows[key] = {
+            "label_hu": cfg["label_hu"],
+            "hit_count": hit_count,
+            "lines": lines[:8],
+            "confidence": min(100, hit_count * 18 + len(lines) * 5),
+        }
+    detected = [k for k, v in rows.items() if v["hit_count"] > 0 or v["lines"]]
+    detected = sorted(detected, key=lambda k: (rows[k]["confidence"], rows[k]["hit_count"]), reverse=True)
+    return rows, detected
+
+
+def build_universal_briefing_blocks(text: str) -> Dict[str, List[str]]:
+    topic_rows, detected = detect_tactical_topics(text)
+    return {
+        "opponent_identity": extract_context_lines_by_topic(text, "formation", limit=4, context_radius=1),
+        "build_up": extract_context_lines_by_topic(text, "build_up", limit=8, context_radius=1),
+        "pressing": extract_context_lines_by_topic(text, "pressing", limit=8, context_radius=1),
+        "defensive_block": extract_context_lines_by_topic(text, "defensive_block", limit=8, context_radius=1),
+        "transition_attack": extract_context_lines_by_topic(text, "transition_attack", limit=8, context_radius=1),
+        "transition_defense": extract_context_lines_by_topic(text, "transition_defense", limit=8, context_radius=1),
+        "set_pieces": extract_context_lines_by_topic(text, "set_pieces", limit=8, context_radius=1),
+        "key_players": extract_context_lines_by_topic(text, "key_players", limit=8, context_radius=1),
+        "risks": extract_context_lines_by_topic(text, "weakness_risk", limit=8, context_radius=1),
+        "recommendations": extract_context_lines_by_topic(text, "recommendation", limit=8, context_radius=1),
+        "detected_topics": [topic_rows[k]["label_hu"] for k in detected[:10]],
+    }
+
 def extract_lines_with_keywords(text: str, keywords: List[str], limit: int = 6) -> List[str]:
     out = []
-    lines = [x.strip() for x in text.splitlines() if x.strip()]
+    lines = [x.strip() for x in str(text or "").splitlines() if x.strip()]
+    keyword_norms = [_norm_for_tagging(k) for k in keywords]
     for line in lines:
-        line_norm = normalize_text(line)
-        if any(k in line_norm for k in keywords):
+        line_norm = _norm_for_tagging(line)
+        if any(k and k in line_norm for k in keyword_norms):
             out.append(line)
         if len(out) >= limit:
             break
@@ -797,51 +1052,91 @@ def extract_player_names_from_pdf(text: str, limit: int = 6) -> List[str]:
 
 
 def build_pdf_insights(text: str) -> Dict[str, object]:
+    """Universal Tactical PDF Reader.
+    SportsBase-specifikus kulcsszavak helyett széles HU/EN címkerendszerrel dolgozik.
+    Nem garantálja, hogy bármilyen PDF-ből minden adatot kiszed, de sokkal több taktikai riporttal kompatibilis.
+    """
     formation = infer_formation(text)
+    topic_rows, detected_topics = detect_tactical_topics(text)
+    universal_blocks = build_universal_briefing_blocks(text)
 
-    dna_lines = extract_lines_with_keywords(
-        text,
-        ["press", "pressing", "build-up", "build up", "transition", "counter", "direct", "possession", "ppda"],
-        limit=8,
-    )
+    dna_lines = unique_keep_order(
+        universal_blocks.get("build_up", [])[:3]
+        + universal_blocks.get("pressing", [])[:3]
+        + universal_blocks.get("defensive_block", [])[:3]
+        + extract_lines_with_keywords(
+            text,
+            TACTICAL_TOPIC_TAGS["build_up"]["keywords"]
+            + TACTICAL_TOPIC_TAGS["pressing"]["keywords"]
+            + TACTICAL_TOPIC_TAGS["transition_attack"]["keywords"]
+            + TACTICAL_TOPIC_TAGS["direct_play"]["keywords"],
+            limit=10,
+        )
+    )[:10]
 
-    risk_lines = extract_lines_with_keywords(
-        text,
-        ["weakness", "risk", "vulnerable", "exposed", "set piece", "cross", "transition", "counter", "lost balls"],
-        limit=8,
-    )
+    risk_lines = unique_keep_order(
+        universal_blocks.get("risks", [])
+        + extract_lines_with_keywords(
+            text,
+            TACTICAL_TOPIC_TAGS["weakness_risk"]["keywords"]
+            + TACTICAL_TOPIC_TAGS["transition_defense"]["keywords"],
+            limit=10,
+        )
+    )[:10]
 
-    set_piece_lines = extract_lines_with_keywords(
-        text,
-        ["corner", "free kick", "set piece", "header", "aerial"],
-        limit=6,
-    )
+    set_piece_lines = unique_keep_order(
+        universal_blocks.get("set_pieces", [])
+        + extract_lines_with_keywords(text, TACTICAL_TOPIC_TAGS["set_pieces"]["keywords"], limit=8)
+    )[:8]
 
-    dynamics_lines = extract_lines_with_keywords(
-        text,
-        ["first half", "second half", "tempo", "start", "late phase", "after losing", "after winning", "momentum"],
-        limit=6,
-    )
+    dynamics_lines = unique_keep_order(
+        universal_blocks.get("transition_attack", [])[:3]
+        + universal_blocks.get("transition_defense", [])[:3]
+        + extract_lines_with_keywords(text, TACTICAL_TOPIC_TAGS["match_dynamics"]["keywords"], limit=8)
+    )[:8]
 
-    pressing_lines = extract_lines_with_keywords(
-        text,
-        ["pressing", "high pressing", "low pressing", "ppda", "challenge intensity"],
-        limit=6,
-    )
+    pressing_lines = unique_keep_order(
+        universal_blocks.get("pressing", [])
+        + extract_lines_with_keywords(text, TACTICAL_TOPIC_TAGS["pressing"]["keywords"], limit=8)
+    )[:8]
 
-    build_up_lines = extract_lines_with_keywords(
-        text,
-        ["build-up", "build up", "passes accurate", "progressive", "passes into penalty area", "final third"],
-        limit=6,
-    )
+    build_up_lines = unique_keep_order(
+        universal_blocks.get("build_up", [])
+        + universal_blocks.get("direct_play", [])
+        + extract_lines_with_keywords(
+            text,
+            TACTICAL_TOPIC_TAGS["build_up"]["keywords"] + TACTICAL_TOPIC_TAGS["direct_play"]["keywords"],
+            limit=8,
+        )
+    )[:8]
 
-    player_threat_lines = extract_lines_with_keywords(
-        text,
-        ["key passes", "progressive passes", "shots", "xg", "penalty area", "entries", "through pass"],
-        limit=8,
-    )
+    player_threat_lines = unique_keep_order(
+        universal_blocks.get("key_players", [])
+        + universal_blocks.get("chance_creation", [])
+        + extract_lines_with_keywords(
+            text,
+            TACTICAL_TOPIC_TAGS["key_players"]["keywords"] + TACTICAL_TOPIC_TAGS["chance_creation"]["keywords"],
+            limit=10,
+        )
+    )[:10]
 
-    detected_names = extract_player_names_from_pdf(text, limit=8)
+    detected_names = extract_player_names_from_pdf(text, limit=12)
+
+    # Edzői javaslat-jellegű sorok külön: ha a PDF már tartalmaz ajánlást, ne vesszen el.
+    recommendation_lines = unique_keep_order(
+        universal_blocks.get("recommendations", [])
+        + extract_lines_with_keywords(text, TACTICAL_TOPIC_TAGS["recommendation"]["keywords"], limit=10)
+    )[:10]
+
+    topic_summary_rows = []
+    for key in detected_topics[:12]:
+        row = topic_rows[key]
+        topic_summary_rows.append({
+            "Téma": row["label_hu"],
+            "Találat": row["hit_count"],
+            "Bizonyosság": row["confidence"],
+            "Minta": " | ".join(row["lines"][:2]),
+        })
 
     return {
         "formation": formation or "n.a.",
@@ -852,7 +1147,12 @@ def build_pdf_insights(text: str) -> Dict[str, object]:
         "pressing_lines": pressing_lines,
         "build_up_lines": build_up_lines,
         "player_threat_lines": player_threat_lines,
+        "recommendation_lines": recommendation_lines,
         "detected_names": detected_names,
+        "universal_blocks": universal_blocks,
+        "detected_topics": universal_blocks.get("detected_topics", []),
+        "topic_debug": topic_summary_rows,
+        "reader_version": "Universal Tactical PDF Reader HU/EN v1",
     }
 
 
