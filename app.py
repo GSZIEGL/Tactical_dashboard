@@ -60,7 +60,7 @@ except Exception:
     CAIROSVG_AVAILABLE = False
 
 st.set_page_config(page_title="Tactical Briefing Engine", layout="wide")
-APP_VERSION = "TACTICAL_UNIVERSAL_PDF_EXCEL_V1_2026_06_16"
+APP_VERSION = "TACTICAL_UNIVERSAL_PDF_EXCEL_V2_MAPPER_2026_06_17"
 
 PDF_FONT_NAME = "Helvetica"
 PDF_FONT_BOLD_NAME = "Helvetica-Bold"
@@ -120,7 +120,7 @@ def pdf_safe_text(text) -> str:
     s = "" if text is None else str(text)
     s = unicodedata.normalize("NFC", s)
     replacements = {
-        " ": " ",
+        " ": " ",
         "‐": "-",
         "‑": "-",
         "‒": "-",
@@ -129,7 +129,7 @@ def pdf_safe_text(text) -> str:
         "―": "-",
         "−": "-",
         "…": "...",
-        "​": "",
+        "": "",
     }
     for src, dst in replacements.items():
         s = s.replace(src, dst)
@@ -3321,6 +3321,333 @@ def render_export_preview(package: Dict[str, object]):
                 st.write(f"- {x}")
 
 
+
+# =========================================================
+# UNIVERSAL TACTICAL EXCEL MAPPER V2
+# Team Excel + Player Excel kézi/automatikus mapping
+# =========================================================
+
+TEAM_METRIC_FIELD_INFO = {
+    "possession_pct": ("Labdabirtoklás %", "A csapat labdabirtoklási aránya.", "százalék"),
+    "shots": ("Lövések", "Összes lövés vagy attempts.", "darab"),
+    "xg": ("xG", "Expected Goals / várható gól.", "gólérték"),
+    "entries_box": ("Box entries", "Belépések az ellenfél tizenhatosába.", "darab"),
+    "key_passes": ("Kulcspassz / shot assist", "Lövést előkészítő passzok.", "darab"),
+    "corners": ("Szögletek", "Elvégzett szögletek száma.", "darab"),
+    "ppda": ("PPDA", "Passes allowed per defensive action.", "arány"),
+    "pressing_success_pct": ("Pressing sikeresség %", "Sikeres pressing / nyomás aránya.", "százalék"),
+    "passes_accurate_pct": ("Passzpontosság %", "Pontos passzok aránya.", "százalék"),
+}
+
+PLAYER_METRIC_FIELD_INFO = {
+    "player": ("Játékos", "Játékos neve.", "szöveg"),
+    "position": ("Poszt", "Játékos posztja.", "szöveg"),
+    "minutes_played": ("Játékperc", "Játszott percek.", "perc"),
+    "passes": ("Passzok", "Összes passz.", "darab"),
+    "progressive_passes": ("Progresszív passzok", "Előrehaladó / progresszív passzok.", "darab"),
+    "key_passes": ("Kulcspasszok", "Lövést előkészítő passzok.", "darab"),
+    "interceptions": ("Labdaszerzések / interceptions", "Közbelépések, labdaszerzések.", "darab"),
+    "defensive_challenges": ("Védekező párharcok", "Defensive duels / challenges.", "darab"),
+    "def_challenges_won_pct": ("Védekező párharc nyert %", "Megnyert védekező párharcok aránya.", "százalék"),
+}
+
+# Bővített aliasok: Provision / SportsBase / Wyscout / Hudl jellegű elnevezésekhez is.
+TEAM_METRIC_ALIASES_V2 = {
+    **METRIC_ALIASES,
+    "final_third_entries": [
+        "final third entries", "entries to final third", "attacking third entries",
+        "támadóharmad belépések", "belépések támadóharmadba", "utolsó harmad belépések",
+    ],
+    "crosses": ["crosses", "successful crosses", "beadások", "beadás", "sikeres beadások"],
+    "recoveries": ["recoveries", "ball recoveries", "regains", "labdaszerzések", "visszaszerzések"],
+    "lost_balls": ["lost balls", "losses", "turnovers", "labdavesztések", "elvesztett labdák"],
+    "counterattacks": ["counterattacks", "counter attacks", "fast attacks", "kontrák", "kontratámadások", "gyors támadások"],
+}
+
+PLAYER_COL_ALIASES_V2 = {
+    **PLAYER_COL_ALIASES,
+    "shots": ["shots", "shot", "attempts", "lövések", "lövés"],
+    "xg": ["xg", "expected goals", "várható gól", "várható gólok"],
+    "assists": ["assists", "assist", "gólpassz", "gólpasszok"],
+    "recoveries": ["recoveries", "ball recoveries", "labdaszerzések", "visszaszerzések"],
+    "crosses": ["crosses", "beadások", "beadás"],
+    "duels": ["duels", "challenges", "párharcok", "párharc"],
+}
+
+def _norm_col_text_v2(x: object) -> str:
+    s = unicodedata.normalize("NFKD", str(x or "").lower().replace("\u00ad", " "))
+    s = "".join(ch for ch in s if not unicodedata.combining(ch))
+    s = re.sub(r"[^a-z0-9%]+", " ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+def smart_score_v2(source_col: object, aliases: List[str], field_key: str = "") -> int:
+    src = _norm_col_text_v2(source_col)
+    if not src:
+        return 0
+    alias_norms = [_norm_col_text_v2(a) for a in aliases] + [_norm_col_text_v2(field_key)]
+    best = 0
+    for a in alias_norms:
+        if not a:
+            continue
+        if src == a:
+            best = max(best, 100)
+        elif src.replace(" ", "") == a.replace(" ", ""):
+            best = max(best, 96)
+        elif a in src or src in a:
+            best = max(best, 86 if len(a) >= 4 else 70)
+        else:
+            stoks, atoks = set(src.split()), set(a.split())
+            if stoks and atoks:
+                overlap = len(stoks & atoks) / max(1, len(atoks))
+                best = max(best, int(overlap * 78))
+    return int(best)
+
+def detect_excel_header_row_v2(raw: pd.DataFrame, alias_bank: Dict[str, List[str]], max_scan: int = 40) -> int:
+    if raw is None or raw.empty:
+        return 0
+    best_i, best_score = 0, -1
+    all_aliases = []
+    for aliases in alias_bank.values():
+        all_aliases.extend(aliases)
+    for i in range(min(max_scan, len(raw))):
+        cells = [str(v).strip() for v in raw.iloc[i].tolist() if str(v).strip().lower() not in ["", "nan", "none"]]
+        if not cells:
+            continue
+        joined = " | ".join(cells)
+        score = 0
+        for a in all_aliases:
+            if _norm_col_text_v2(a) and _norm_col_text_v2(a) in _norm_col_text_v2(joined):
+                score += 4
+        numeric_like = sum(1 for c in cells if re.fullmatch(r"-?\d+(?:[.,]\d+)?%?", c))
+        text_like = len(cells) - numeric_like
+        if text_like >= 3:
+            score += 8
+        if numeric_like > text_like:
+            score -= 10
+        if score > best_score:
+            best_i, best_score = i, score
+    return best_i
+
+def read_best_excel_df_v2(file_bytes: bytes, alias_bank: Dict[str, List[str]], prefer_total: bool = False) -> Tuple[pd.DataFrame, str, List[dict]]:
+    debug = []
+    try:
+        xls = pd.ExcelFile(io.BytesIO(file_bytes))
+    except Exception as e:
+        st.session_state["excel_import_error"] = f"Az Excel-fájl nem olvasható: {e}"
+        return pd.DataFrame(), "", debug
+
+    best_df, best_sheet, best_score = pd.DataFrame(), "", -999
+    for sheet in xls.sheet_names:
+        try:
+            raw = pd.read_excel(io.BytesIO(file_bytes), sheet_name=sheet, header=None)
+        except Exception:
+            continue
+        header_row = detect_excel_header_row_v2(raw, alias_bank)
+        if raw.empty or header_row >= len(raw):
+            continue
+        cols = [str(x).strip() if str(x).strip().lower() not in ["", "nan", "none"] else f"col_{j+1}" for j, x in enumerate(raw.iloc[header_row].tolist())]
+        df = raw.iloc[header_row + 1:].copy()
+        df.columns = cols
+        df = df.dropna(how="all")
+        header_text = " ".join(map(str, cols))
+        score = 0
+        for field, aliases in alias_bank.items():
+            if max([smart_score_v2(c, aliases, field) for c in df.columns] or [0]) >= 58:
+                score += 10
+        if prefer_total and find_total_row_index(raw) is not None:
+            score += 25
+        if "main statistics" in _norm_col_text_v2(sheet):
+            score += 20
+        if "player" in _norm_col_text_v2(sheet) or "játékos" in _norm_col_text_v2(sheet):
+            score += 10
+        debug.append({"sheet": sheet, "header_row": header_row, "score": score, "columns": cols[:25], "preview": df.head(5)})
+        if score > best_score:
+            best_df, best_sheet, best_score = df, sheet, score
+    return best_df, best_sheet, debug
+
+def suggest_mapping_v2(df: pd.DataFrame, alias_bank: Dict[str, List[str]]) -> Dict[str, Optional[str]]:
+    mapping = {}
+    used = set()
+    for field, aliases in alias_bank.items():
+        scored = []
+        for c in df.columns:
+            if c in used:
+                continue
+            scored.append((smart_score_v2(c, aliases, field), c))
+        scored.sort(reverse=True, key=lambda x: x[0])
+        if scored and scored[0][0] >= 58:
+            mapping[field] = scored[0][1]
+            used.add(scored[0][1])
+        else:
+            mapping[field] = None
+    return mapping
+
+def render_tactical_excel_mapper(uploaded_file, mapper_kind: str, state_prefix: str, title: str) -> Dict[str, Optional[str]]:
+    """Streamlit UI: kézi/automatikus mapper csapat- vagy játékos Excelhez."""
+    if uploaded_file is None:
+        return {}
+    alias_bank = TEAM_METRIC_ALIASES_V2 if mapper_kind == "team" else PLAYER_COL_ALIASES_V2
+    field_info = TEAM_METRIC_FIELD_INFO if mapper_kind == "team" else PLAYER_METRIC_FIELD_INFO
+    try:
+        file_bytes = uploaded_file.getvalue()
+    except Exception:
+        return {}
+
+    df, sheet_name, sheet_debug = read_best_excel_df_v2(file_bytes, alias_bank, prefer_total=(mapper_kind == "team"))
+    if df is None or df.empty:
+        return {}
+
+    signature = hashlib.md5(file_bytes).hexdigest()[:12]
+    sig_key = f"{state_prefix}_mapper_signature"
+    map_key = f"{state_prefix}_manual_mapping"
+    sheet_key = f"{state_prefix}_mapper_sheet"
+    if st.session_state.get(sig_key) != signature:
+        st.session_state[sig_key] = signature
+        st.session_state[map_key] = suggest_mapping_v2(df, alias_bank)
+        st.session_state[sheet_key] = sheet_name
+
+    manual = dict(st.session_state.get(map_key, suggest_mapping_v2(df, alias_bank)))
+    cols = [""] + [str(c) for c in df.columns]
+
+    with st.expander(f"🧭 {title} – Smart Tactical Mapper", expanded=False):
+        st.caption(f"Felismert munkalap: {sheet_name or 'n.a.'}. Itt tudod javítani a csapat- vagy játékosstatisztika oszlopait.")
+        render_cols = st.columns(3)
+        fields = list(alias_bank.keys())
+        for idx, field in enumerate(fields):
+            label, desc, unit = field_info.get(field, (field, "", ""))
+            default = manual.get(field) or ""
+            with render_cols[idx % 3]:
+                manual[field] = st.selectbox(
+                    f"{label} ({unit})",
+                    cols,
+                    index=cols.index(default) if default in cols else 0,
+                    key=f"{state_prefix}_map_{field}_{signature}",
+                    help=desc,
+                ) or None
+        st.session_state[map_key] = manual
+
+        score_rows = []
+        for field, src in manual.items():
+            aliases = alias_bank.get(field, [])
+            score_rows.append({
+                "Mező": field_info.get(field, (field, "", ""))[0],
+                "Technikai mező": field,
+                "Kiválasztott oszlop": src or "",
+                "Bizonyosság": smart_score_v2(src, aliases, field) if src else 0,
+            })
+        st.dataframe(pd.DataFrame(score_rows), use_container_width=True)
+        if st.checkbox("Adat előnézet", key=f"{state_prefix}_preview_{signature}"):
+            st.dataframe(df.head(10), use_container_width=True)
+        if st.checkbox("Munkalap diagnosztika", key=f"{state_prefix}_sheetdebug_{signature}"):
+            dbg = [{k: v for k, v in row.items() if k != "preview"} for row in sheet_debug]
+            st.json(dbg)
+    return manual
+
+def _series_to_numeric_v2(s: pd.Series) -> pd.Series:
+    if s is None:
+        return pd.Series(dtype=float)
+    return pd.to_numeric(s.astype(str).str.replace(",", ".", regex=False).str.replace("%", "", regex=False), errors="coerce")
+
+def parse_excel_metrics_with_debug(file_bytes: bytes, manual_mapping: Optional[Dict[str, Optional[str]]] = None) -> Tuple[Dict[str, float], List[dict], List[dict], int]:
+    """V2: univerzális csapat Excel parser mapper támogatással.
+    Ha van kézi mapping, azt használja. Ha nincs, automatikusan javasol.
+    Kompatibilis marad a SportsBase Main Statistics logikával is.
+    """
+    metrics: Dict[str, float] = {}
+    all_debug_rows: List[dict] = []
+    match_count = 0
+
+    df, sheet_name, sheet_debug = read_best_excel_df_v2(file_bytes, TEAM_METRIC_ALIASES_V2, prefer_total=True)
+    if df is None or df.empty:
+        return metrics, all_debug_rows, sheet_debug, match_count
+
+    mapping = {k: v for k, v in (manual_mapping or {}).items() if v}
+    if not mapping:
+        mapping = suggest_mapping_v2(df, TEAM_METRIC_ALIASES_V2)
+
+    # Ha van Total sor, azt preferáljuk, különben numerikus oszlopok összege/átlaga.
+    total_mask = pd.Series(False, index=df.index)
+    if len(df.columns) > 0:
+        total_mask = df.iloc[:, 0].astype(str).str.strip().str.lower().eq("total")
+    total_row = df[total_mask].iloc[0] if total_mask.any() else None
+
+    # meccsszám: dátumos első oszlop vagy nem üres sorok száma
+    try:
+        non_empty_rows = df.dropna(how="all")
+        match_count = max(1, len(non_empty_rows) - (1 if total_mask.any() else 0))
+    except Exception:
+        match_count = 1
+
+    pct_fields = {"possession_pct", "pressing_success_pct", "passes_accurate_pct"}
+    average_fields = pct_fields | {"ppda", "xg"}
+
+    for field, col in mapping.items():
+        if not col or col not in df.columns:
+            all_debug_rows.append({"metric": field, "sheet": sheet_name, "mapped_column": col, "parsed_value": 0.0, "mode": "missing"})
+            continue
+        if total_row is not None:
+            raw_val = total_row.get(col)
+            val = coerce_cell_value(raw_val)
+            parsed = float(val) if isinstance(val, (int, float)) else safe_float(val, 0.0)
+            mode = "total_row"
+        else:
+            nums = _series_to_numeric_v2(df[col]).dropna()
+            if nums.empty:
+                parsed = 0.0
+            elif field in average_fields:
+                parsed = float(nums.mean())
+            else:
+                parsed = float(nums.sum())
+            mode = "numeric_mean" if field in average_fields else "numeric_sum"
+        metrics[field] = parsed
+        all_debug_rows.append({"metric": field, "sheet": sheet_name, "mapped_column": col, "parsed_value": parsed, "mode": mode})
+
+    # Csak a score_dimensions által használt mezők maradjanak garantáltan.
+    for k in METRIC_ALIASES.keys():
+        metrics.setdefault(k, 0.0)
+
+    return metrics, all_debug_rows, sheet_debug, match_count
+
+def parse_player_excel(file_bytes: bytes, manual_mapping: Optional[Dict[str, Optional[str]]] = None) -> Dict[str, pd.DataFrame]:
+    """V2: univerzális játékos Excel parser mapper támogatással."""
+    df, sheet_name, sheet_debug = read_best_excel_df_v2(file_bytes, PLAYER_COL_ALIASES_V2, prefer_total=False)
+    if df is None or df.empty:
+        return {"creators": pd.DataFrame(), "progressors": pd.DataFrame(), "build_up": pd.DataFrame(), "defenders": pd.DataFrame(), "duel_players": pd.DataFrame()}
+
+    mapping = {k: v for k, v in (manual_mapping or {}).items() if v}
+    if not mapping:
+        mapping = suggest_mapping_v2(df, PLAYER_COL_ALIASES_V2)
+
+    out = pd.DataFrame()
+    for field, col in mapping.items():
+        if col and col in df.columns:
+            out[field] = df[col]
+    required = ["player", "minutes_played"]
+    for req in required:
+        if req not in out.columns:
+            return {"creators": pd.DataFrame(), "progressors": pd.DataFrame(), "build_up": pd.DataFrame(), "defenders": pd.DataFrame(), "duel_players": pd.DataFrame()}
+
+    out["player"] = out["player"].astype(str).str.strip()
+    out["minutes_played"] = pd.to_numeric(out["minutes_played"].astype(str).str.replace(",", ".", regex=False), errors="coerce").fillna(0)
+    out = out[out["minutes_played"] >= 300].copy()
+
+    for col in ["passes", "progressive_passes", "key_passes", "interceptions", "defensive_challenges", "shots", "xg", "assists", "recoveries", "crosses", "duels"]:
+        if col in out.columns:
+            out[col] = pd.to_numeric(out[col].astype(str).str.replace(",", ".", regex=False).replace("-", pd.NA), errors="coerce").fillna(0.0)
+        else:
+            out[col] = 0.0
+    if "position" not in out.columns:
+        out["position"] = ""
+
+    creators = out.sort_values("key_passes", ascending=False)[["player", "position", "key_passes"]].head(3).reset_index(drop=True)
+    progressors = out.sort_values("progressive_passes", ascending=False)[["player", "position", "progressive_passes"]].head(3).reset_index(drop=True)
+    build_up = out.sort_values("passes", ascending=False)[["player", "position", "passes"]].head(3).reset_index(drop=True)
+    defenders = out.sort_values("interceptions", ascending=False)[["player", "position", "interceptions"]].head(3).reset_index(drop=True)
+    duel_players = out.sort_values("defensive_challenges", ascending=False)[["player", "position", "defensive_challenges"]].head(3).reset_index(drop=True)
+
+    return {"creators": creators, "progressors": progressors, "build_up": build_up, "defenders": defenders, "duel_players": duel_players}
+
+
 def run_engine(
     team_match_file,
     opp_match_file,
@@ -3328,9 +3655,13 @@ def run_engine(
     opp_player_file=None,
     team_pdf_files=None,
     opp_pdf_files=None,
+    team_match_mapping=None,
+    opp_match_mapping=None,
+    team_player_mapping=None,
+    opp_player_mapping=None,
 ):
-    team_metrics, team_debug_rows, team_sheet_debug, team_matches = parse_excel_metrics_with_debug(team_match_file.getvalue())
-    opp_metrics, opp_debug_rows, opp_sheet_debug, opp_matches = parse_excel_metrics_with_debug(opp_match_file.getvalue())
+    team_metrics, team_debug_rows, team_sheet_debug, team_matches = parse_excel_metrics_with_debug(team_match_file.getvalue(), team_match_mapping)
+    opp_metrics, opp_debug_rows, opp_sheet_debug, opp_matches = parse_excel_metrics_with_debug(opp_match_file.getvalue(), opp_match_mapping)
 
     team_scores = score_dimensions(team_metrics, team_matches)
     opp_scores = score_dimensions(opp_metrics, opp_matches)
@@ -3343,8 +3674,8 @@ def run_engine(
             "Edge": round(team_scores[k] - opp_scores[k], 1),
         }
 
-    team_players = parse_player_excel(team_player_file.getvalue()) if team_player_file else None
-    opp_players = parse_player_excel(opp_player_file.getvalue()) if opp_player_file else None
+    team_players = parse_player_excel(team_player_file.getvalue(), team_player_mapping) if team_player_file else None
+    opp_players = parse_player_excel(opp_player_file.getvalue(), opp_player_mapping) if opp_player_file else None
 
     team_pdf_text, team_pdf_pages = combine_targeted_pdf_texts(team_pdf_files or [])
     opp_pdf_text, opp_pdf_pages = combine_targeted_pdf_texts(opp_pdf_files or [])
@@ -3953,6 +4284,16 @@ if step == "1. Input":
     if st.session_state.get("excel_import_error"):
         st.error(st.session_state.get("excel_import_error"))
 
+    st.markdown("### 🧭 Smart Tactical Mapper")
+    st.caption("PDF-eknél automatikus témakinyerés fut. Excelnél kézi/automatikus mapperrel standardizáljuk a csapat- és játékosstatisztikákat.")
+    map_c1, map_c2 = st.columns(2)
+    with map_c1:
+        kte_match_mapping = render_tactical_excel_mapper(kte_match, "team", "kte_match", "KTE csapat Excel")
+        kte_player_mapping = render_tactical_excel_mapper(kte_player, "player", "kte_player", "KTE játékos Excel")
+    with map_c2:
+        opp_match_mapping = render_tactical_excel_mapper(opp_match, "team", "opp_match", "Opponent csapat Excel")
+        opp_player_mapping = render_tactical_excel_mapper(opp_player, "player", "opp_player", "Opponent játékos Excel")
+
     def _uploaded_signature(*files):
         parts = []
         for f in files:
@@ -4010,6 +4351,10 @@ if step == "1. Input":
             opp_player,
             [kte_pdf_1, kte_pdf_2, kte_pdf_3],
             [opp_pdf_1, opp_pdf_2, opp_pdf_3],
+            team_match_mapping=kte_match_mapping,
+            opp_match_mapping=opp_match_mapping,
+            team_player_mapping=kte_player_mapping,
+            opp_player_mapping=opp_player_mapping,
         )
 
         if st.session_state.get("excel_import_error"):
